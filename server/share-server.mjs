@@ -88,7 +88,7 @@ async function writeShare(id, data) {
   if (r2) {
     await r2.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
-      Key: `shares/${safeId(id)}.json`,
+      Key: `${safeId(id)}/share.json`,
       Body: json,
       ContentType: 'application/json',
       CacheControl: 'no-cache, no-store',
@@ -104,7 +104,7 @@ async function readShare(id) {
   try {
     const res = await r2.send(new GetObjectCommand({
       Bucket: R2_BUCKET,
-      Key: `shares/${safeId(id)}.json`,
+      Key: `${safeId(id)}/share.json`,
     }));
     const text = await res.Body.transformToString();
     const data = JSON.parse(text);

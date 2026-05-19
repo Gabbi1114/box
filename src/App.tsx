@@ -313,19 +313,17 @@ export default function App() {
           {/* Top-right controls */}
           <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
 
-            {/* Share button — only shown in edit mode, not on shared links */}
-            {!shareId && (
-              <motion.button
-                onClick={handleShare}
-                whileTap={{ scale: 0.92 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
-              >
-                {shareLoading
-                  ? <Loader className="w-4 h-4 animate-spin" />
-                  : <Share2  className="w-4 h-4" />}
-                <span>{shareLoading ? 'Saving…' : 'Share'}</span>
-              </motion.button>
-            )}
+            {/* Share button — always visible in edit mode */}
+            <motion.button
+              onClick={handleShare}
+              whileTap={{ scale: 0.92 }}
+              className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+            >
+              {shareLoading
+                ? <Loader className="w-4 h-4 animate-spin" />
+                : <Share2  className="w-4 h-4" />}
+              <span>{shareLoading ? 'Starting…' : shareUrl ? 'Copy Link' : 'Share'}</span>
+            </motion.button>
 
             {/* Done Editing — simple reversible view toggle */}
             <motion.button
