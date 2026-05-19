@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
@@ -39,6 +39,20 @@ const r2 = R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_KEY && R2_BUCKET
 
 if (r2) {
   console.log(`[share] ✓ R2 enabled — bucket: ${R2_BUCKET}`);
+  // Set CORS on the bucket so browsers can load images cross-origin
+  r2.send(new PutBucketCorsCommand({
+    Bucket: R2_BUCKET,
+    CORSConfiguration: {
+      CORSRules: [{
+        AllowedOrigins: ['*'],
+        AllowedMethods: ['GET', 'HEAD'],
+        AllowedHeaders: ['*'],
+        MaxAgeSeconds: 86400,
+      }],
+    },
+  }))
+    .then(() => console.log('[share] ✓ R2 CORS policy applied'))
+    .catch(e  => console.warn('[share] ✗ R2 CORS setup failed:', e.message));
 } else {
   console.warn('[share] ✗ R2 not configured — media stored on local disk');
 }
