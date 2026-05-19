@@ -12,9 +12,67 @@ import SideEditor from './components/SideEditor.tsx';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Layers, Settings, ChevronLeft, ChevronRight, Share2, Box as BoxIcon,
-  Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw,
+  Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw, Lock,
 } from 'lucide-react';
 import { createShare, updateShare, loadShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
+
+const EDITOR_PASSWORD = import.meta.env.VITE_EDITOR_PASSWORD as string | undefined;
+const AUTH_KEY = 'box_studio_auth';
+
+function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
+  const [value, setValue] = useState('');
+  const [shake, setShake]   = useState(false);
+
+  const submit = () => {
+    if (value === EDITOR_PASSWORD) {
+      localStorage.setItem(AUTH_KEY, '1');
+      onUnlock();
+    } else {
+      setShake(true);
+      setValue('');
+      setTimeout(() => setShake(false), 500);
+    }
+  };
+
+  return (
+    <div className="relative w-full h-screen bg-neutral-950 flex items-center justify-center font-sans">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-80 flex flex-col items-center gap-6"
+      >
+        <div className="w-14 h-14 bg-gradient-to-br from-pink-500 to-violet-500 rounded-2xl flex items-center justify-center shadow-lg shadow-pink-500/20">
+          <Lock className="w-7 h-7 text-white" />
+        </div>
+        <div className="text-center">
+          <h1 className="text-xl font-bold text-white tracking-tight">Explosion Box Studio</h1>
+          <p className="text-xs text-neutral-500 mt-1">Enter password to continue</p>
+        </div>
+        <motion.div
+          animate={shake ? { x: [-8, 8, -6, 6, -4, 4, 0] } : {}}
+          transition={{ duration: 0.4 }}
+          className="w-full"
+        >
+          <input
+            type="password"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="Password"
+            autoFocus
+            className="w-full px-4 py-3 rounded-xl bg-white/8 border border-white/10 text-white placeholder-neutral-600 text-sm outline-none focus:border-pink-500/60 focus:bg-white/10 transition-all text-center tracking-widest"
+          />
+        </motion.div>
+        <button
+          onClick={submit}
+          className="w-full py-3 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-semibold transition-all active:scale-95"
+        >
+          Unlock
+        </button>
+      </motion.div>
+    </div>
+  );
+}
 
 const DEFAULT_CONFIG: BoxConfig = {
   numLayers: 3,
@@ -26,6 +84,12 @@ const DEFAULT_CONFIG: BoxConfig = {
 };
 
 export default function App() {
+  const isShareLink = !!getShareId();
+  const needsPassword = !!EDITOR_PASSWORD && !isShareLink;
+  const [unlocked, setUnlocked] = useState(() =>
+    !needsPassword || localStorage.getItem(AUTH_KEY) === '1'
+  );
+
   const [config, setConfig] = useState<BoxConfig>(DEFAULT_CONFIG);
   const [sides, setSides] = useState<BoxSide[]>([]);
   const [activeMode, setActiveMode] = useState<AppMode>('BOX_EDIT');
@@ -176,6 +240,8 @@ export default function App() {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+  if (!unlocked) return <PasswordGate onUnlock={() => setUnlocked(true)} />;
+
   return (
     <div className="relative w-full h-screen bg-neutral-950 overflow-hidden font-sans text-white">
 
