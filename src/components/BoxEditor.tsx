@@ -1,0 +1,145 @@
+import React, { useState } from 'react';
+import { BoxConfig } from '../types';
+import { Layers, Maximize, Box as BoxIcon, Play, ChevronRight, ChevronLeft, RotateCcw } from 'lucide-react';
+
+interface BoxEditorProps {
+  config: BoxConfig;
+  setConfig: React.Dispatch<React.SetStateAction<BoxConfig>>;
+  onToggleOpen: () => void;
+  onPrevStep?: () => void;
+}
+
+const colors = [
+  '#ec4899', '#8b5cf6', '#3b82f6', '#10b981',
+  '#f59e0b', '#ef4444', '#ffffff', '#171717',
+];
+
+type ColorTarget = 'baseColor' | 'innerColor';
+const COLOR_PARTS: { key: ColorTarget; label: string }[] = [
+  { key: 'baseColor',  label: 'Out' },
+  { key: 'innerColor', label: 'In'  },
+];
+
+export default function BoxEditor({ config, setConfig, onToggleOpen, onPrevStep }: BoxEditorProps) {
+  const [colorTarget, setColorTarget] = useState<ColorTarget>('baseColor');
+
+  const update = (key: keyof BoxConfig, value: any) =>
+    setConfig(prev => ({ ...prev, [key]: value }));
+
+  const statusText = () => {
+    if (config.openLevel === 0) return 'closed';
+    if (config.openLevel === 1) return 'lid off';
+    if (config.openLevel > config.numLayers) return 'exploded';
+    return `layer ${config.openLevel - 1}`;
+  };
+
+  return (
+    <div className="flex items-end justify-center gap-2.5 flex-wrap pb-2">
+      {/* Unbox pill */}
+      <div className="flex items-center gap-2 bg-black/70 backdrop-blur-xl rounded-full px-3 py-2 border border-white/[0.07]">
+        {config.openLevel > 0 && (
+          <>
+            <button
+              onClick={() => update('openLevel', 0)}
+              className="p-1 text-neutral-600 hover:text-neutral-300 transition-colors"
+              title="Reset"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onPrevStep}
+              className="p-1 text-neutral-600 hover:text-neutral-300 transition-colors"
+              title="Back"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          </>
+        )}
+        <button
+          onClick={onToggleOpen}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+            config.openLevel > 0
+              ? 'bg-pink-600 shadow-[0_0_12px_rgba(236,72,153,0.5)]'
+              : 'bg-white hover:scale-105'
+          }`}
+        >
+          {config.openLevel === 0
+            ? <Play className="w-3.5 h-3.5 fill-black text-black ml-0.5" />
+            : config.openLevel > config.numLayers
+              ? <Play className="w-3.5 h-3.5 fill-white text-white ml-0.5 opacity-40" />
+              : <ChevronRight className="w-4 h-4 text-white" />
+          }
+        </button>
+        <span className="text-[10px] font-mono text-neutral-600 uppercase pr-1">{statusText()}</span>
+      </div>
+
+      {/* Layers pill */}
+      <div className="flex items-center gap-2.5 bg-black/70 backdrop-blur-xl rounded-full px-4 py-2 border border-white/[0.07]">
+        <Layers className="w-3.5 h-3.5 text-neutral-600 shrink-0" />
+        <input
+          type="range" min="1" max="6"
+          value={config.numLayers}
+          onChange={(e) => update('numLayers', parseInt(e.target.value))}
+          className="w-20 accent-pink-500 h-px bg-neutral-800 rounded appearance-none cursor-pointer"
+        />
+        <span className="text-xs font-mono text-neutral-300 w-3 text-center">{config.numLayers}</span>
+      </div>
+
+      {/* Sides pill */}
+      <div className="flex items-center gap-2.5 bg-black/70 backdrop-blur-xl rounded-full px-4 py-2 border border-white/[0.07]">
+        <BoxIcon className="w-3.5 h-3.5 text-neutral-600 shrink-0" />
+        <input
+          type="range" min="3" max="12"
+          value={config.numSides}
+          onChange={(e) => update('numSides', parseInt(e.target.value))}
+          className="w-20 accent-pink-500 h-px bg-neutral-800 rounded appearance-none cursor-pointer"
+        />
+        <span className="text-xs font-mono text-neutral-300 w-3 text-center">{config.numSides}</span>
+      </div>
+
+      {/* Size pill */}
+      <div className="flex items-center gap-2.5 bg-black/70 backdrop-blur-xl rounded-full px-4 py-2 border border-white/[0.07]">
+        <Maximize className="w-3.5 h-3.5 text-neutral-600 shrink-0" />
+        <input
+          type="range" min="2" max="5" step="0.1"
+          value={config.size}
+          onChange={(e) => update('size', parseFloat(e.target.value))}
+          className="w-20 accent-pink-500 h-px bg-neutral-800 rounded appearance-none cursor-pointer"
+        />
+        <span className="text-xs font-mono text-neutral-300 w-7 text-center">{config.size.toFixed(1)}</span>
+      </div>
+
+      {/* Combined color picker pill */}
+      <div className="flex items-center gap-2 bg-black/70 backdrop-blur-xl rounded-full px-3 py-2 border border-white/[0.07]">
+        {/* Part selector tabs */}
+        <div className="flex items-center gap-0.5">
+          {COLOR_PARTS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setColorTarget(key)}
+              className={`px-2 py-1 rounded-full text-[10px] font-mono uppercase transition-all ${
+                colorTarget === key
+                  ? 'bg-white/15 text-white'
+                  : 'text-neutral-600 hover:text-neutral-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="w-px h-4 bg-white/10" />
+        {/* Swatches for the active target */}
+        {colors.map(color => (
+          <button
+            key={color}
+            onClick={() => update(colorTarget, color)}
+            className={`w-5 h-5 rounded-full transition-all hover:scale-125 active:scale-95 ${
+              config[colorTarget] === color ? 'ring-2 ring-white ring-offset-1 ring-offset-black scale-110' : ''
+            }`}
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}

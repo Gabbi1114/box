@@ -1,0 +1,8 @@
+{
+  "name": "3D Explosion Box Studio",
+  "description": "A fully customizable 3D multi-layered explosion box creator with image, text, and graphic editing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
