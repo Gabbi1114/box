@@ -5,7 +5,7 @@
  */
 import { BoxConfig, BoxSide } from '../types';
 
-const API = '/api';
+const API = (import.meta.env.VITE_API_BASE ?? '') + '/api';
 
 // ---------------------------------------------------------------------------
 // URL helpers
