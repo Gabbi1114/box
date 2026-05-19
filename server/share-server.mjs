@@ -157,7 +157,7 @@ async function convertImage(buf, mime, hd = false) {
 // ---------------------------------------------------------------------------
 const app = express();
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
+const CORS_ORIGIN = (process.env.CORS_ORIGIN ?? '*').replace(/\/$/, '');
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
