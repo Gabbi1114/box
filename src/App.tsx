@@ -377,7 +377,7 @@ export default function App() {
         <>
           {/* Top-right: share + edit */}
           <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
-            {shareUrl && (
+            {shareUrl && !isShareLink && (
               <button
                 onClick={() => { setShowShareToast(true); setToastCopied(false); }}
                 className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
