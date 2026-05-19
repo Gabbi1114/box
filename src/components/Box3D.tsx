@@ -75,10 +75,10 @@ function useSideTexture(side: BoxSide, innerColor: string) {
             const w = (src as HTMLVideoElement).videoWidth  || (src as HTMLImageElement).naturalWidth;
             const h = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight;
             if (w && h) {
-              // Fit the image to the same proportion as it appears in the editor canvas
-              const editorFit = Math.min(designCanvasSize / w, designCanvasSize / h);
-              const drawW = w * editorFit * texScale;
-              const drawH = h * editorFit * texScale;
+              // Mirror editor behaviour: scale down if larger than canvas, don't scale up small items
+              const fitScale = Math.min(1, designCanvasSize / w, designCanvasSize / h);
+              const drawW = w * fitScale * texScale;
+              const drawH = h * fitScale * texScale;
               ctx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
             }
           }
