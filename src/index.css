@@ -1,1 +1,18 @@
 @import "tailwindcss";
+
+/* ── iOS Safari: kill backdrop-filter on touch devices ── */
+/* Stacking multiple backdrop-blur layers is a documented iOS Safari crash vector */
+@media (hover: none) and (pointer: coarse) {
+  .safe-blur {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: rgba(5, 5, 5, 0.97) !important;
+  }
+}
+/* On desktop keep the blur */
+@media (hover: hover) {
+  .safe-blur {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+}

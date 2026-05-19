@@ -75,6 +75,8 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId }:
     onUpdate(side.elements.map(el => el.id === id ? { ...el, ...updates } : el));
 
   const removeElement = (id: string) => {
+    const el = side.elements.find(e => e.id === id);
+    if (el?.content?.startsWith('blob:')) URL.revokeObjectURL(el.content);
     onUpdate(side.elements.filter(el => el.id !== id));
     setSelectedId(null);
   };
@@ -84,7 +86,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId }:
     setGifLoading(true);
     try {
       const res = await fetch(
-        `https://api.tenor.com/v1/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=24&media_filter=basic&contentfilter=medium`
+        `https://api.tenor.com/v1/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12&media_filter=basic&contentfilter=medium`
       );
       const data = await res.json();
       setGifResults((data.results ?? []).map((g: any) => ({
@@ -299,6 +301,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId }:
                         alt=""
                         className="w-full h-full object-cover"
                         loading="lazy"
+                        decoding="async"
+                        width={120}
+                        height={120}
                       />
                     </button>
                   ))}
@@ -523,7 +528,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId }:
                   document.addEventListener('pointerup', onUp);
                 }}
               >
-                <div className="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_12px_rgba(59,130,246,0.9)]" />
+                <div className="w-4 h-4 bg-blue-500 border-2 border-white rounded-full" />
               </div>
             )}
           </div>

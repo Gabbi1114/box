@@ -4,7 +4,15 @@ import { OrbitControls, PerspectiveCamera, ContactShadows, Edges } from '@react-
 import * as THREE from 'three';
 import { BoxConfig, BoxSide } from '../types';
 
-const RES = 1024;
+// iOS Safari has a ~150 MB WebGL texture limit; 512px textures use 1 MB each vs 4 MB at 1024px
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const RES = isIOS ? 512 : 1024;
+
+// iOS Safari hard-limits concurrent hardware video decoders to 4 — keep 1 spare
+let _activeVideoCount = 0;
+const MAX_VIDEOS = isIOS ? 2 : 4;
+
 const isGifUrl   = (url: string) => /\.gif(\?|$)/i.test(url);
 const isVideoUrl = (url: string) =>
   /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url) || url.startsWith('blob:');
@@ -86,6 +94,12 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     let pending = toLoad.length;
     for (const el of toLoad) {
       if (isVideoUrl(el.content)) {
+        // Enforce decoder cap — skip if at limit
+        if (_activeVideoCount >= MAX_VIDEOS) {
+          if (--pending === 0) drawFn.current();
+          continue;
+        }
+        _activeVideoCount++;
         const vid = document.createElement('video');
         vid.loop = true;
         vid.muted = true;
@@ -101,7 +115,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
           vid.play().catch(() => {});
           if (--pending === 0) drawFn.current();
         };
-        vid.onerror = () => { if (--pending === 0) drawFn.current(); };
+        vid.onerror = () => { _activeVideoCount = Math.max(0, _activeVideoCount - 1); if (--pending === 0) drawFn.current(); };
         vid.src = el.content;
       } else {
         const img = document.createElement('img') as HTMLImageElement;
@@ -134,7 +148,13 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     texture.dispose();
     gifImgs.current.forEach(img => img.parentNode?.removeChild(img));
     gifImgs.current = [];
-    videoElems.current.forEach(v => { v.pause(); v.parentNode?.removeChild(v); });
+    videoElems.current.forEach(v => {
+      v.pause();
+      v.src = '';   // forces iOS to release the hardware decoder immediately
+      v.load();
+      v.parentNode?.removeChild(v);
+      _activeVideoCount = Math.max(0, _activeVideoCount - 1);
+    });
     videoElems.current = [];
     if (animTimer.current) clearInterval(animTimer.current);
   }, []);
@@ -407,6 +427,26 @@ function AutoRotateDriver({ active }: { active: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// Pauses the render loop when the tab is hidden (iOS doesn't always do this)
+// ---------------------------------------------------------------------------
+function VisibilityGuard() {
+  const { gl, invalidate } = useThree();
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) {
+        gl.domElement.style.visibility = 'hidden';
+      } else {
+        gl.domElement.style.visibility = '';
+        invalidate();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [gl, invalidate]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Signals parent when the first frame has been rendered
 // ---------------------------------------------------------------------------
 function FirstFrameReady({ onReady }: { onReady: () => void }) {
@@ -426,12 +466,13 @@ function FirstFrameReady({ onReady }: { onReady: () => void }) {
 // Scene root
 // ---------------------------------------------------------------------------
 export default function Box3D({
-  config, sides, onSideClick, onReady,
+  config, sides, onSideClick, onReady, suspended = false,
 }: {
   config: BoxConfig;
   sides: BoxSide[];
   onSideClick: (id: string) => void;
   onReady?: () => void;
+  suspended?: boolean;
 }) {
   const layersArray = Array.from({ length: config.numLayers }, (_, i) => i);
   const autoRotate  = config.openLevel === 0;
@@ -439,19 +480,20 @@ export default function Box3D({
   return (
     <div className="w-full h-full">
       <Canvas
-        frameloop="demand"
-        dpr={[1, 1.5]}
+        frameloop={suspended ? 'never' : 'demand'}
+        dpr={[1, isIOS ? 1 : 1.5]}
         performance={{ min: 0.5 }}
-        gl={{ antialias: true, powerPreference: 'low-power' }}
+        gl={{ antialias: !isIOS, powerPreference: 'low-power' }}
       >
-        <AutoRotateDriver active={autoRotate} />
+        <VisibilityGuard />
+        <AutoRotateDriver active={autoRotate && !suspended} />
         {onReady && <FirstFrameReady onReady={onReady} />}
         <PerspectiveCamera makeDefault position={[7, 7, 7]} fov={45} />
         <OrbitControls
           enablePan={false}
           minDistance={3}
           maxDistance={12}
-          autoRotate={autoRotate}
+          autoRotate={autoRotate && !suspended}
           autoRotateSpeed={0.3}
         />
 
@@ -476,7 +518,10 @@ export default function Box3D({
           })}
         </group>
 
-        <ContactShadows position={[0, -config.size / 2, 0]} opacity={0.4} scale={12} blur={1.5} far={8} />
+        {/* ContactShadows disabled on iOS — off-screen framebuffer doubles GPU draw calls */}
+        {!isIOS && (
+          <ContactShadows position={[0, -config.size / 2, 0]} opacity={0.4} scale={12} blur={1.5} far={8} />
+        )}
       </Canvas>
     </div>
   );

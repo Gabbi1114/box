@@ -129,10 +129,14 @@ async function convertImage(buf, mime, hd = false) {
 // ---------------------------------------------------------------------------
 const app = express();
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '*';
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -140,7 +144,7 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/share — create new share
 // ---------------------------------------------------------------------------
-app.post('/api/share', express.json({ limit: '25mb' }), (req, res) => {
+app.post('/api/share', express.json({ limit: '5mb' }), (req, res) => {
   const { config, sides } = req.body ?? {};
   if (!config || !sides) {
     return res.status(400).json({ error: 'config and sides are required' });
@@ -171,7 +175,7 @@ app.get('/api/share/:id', (req, res) => {
 // ---------------------------------------------------------------------------
 // PUT /api/share/:id — update share (within edit window)
 // ---------------------------------------------------------------------------
-app.put('/api/share/:id', express.json({ limit: '25mb' }), (req, res) => {
+app.put('/api/share/:id', express.json({ limit: '5mb' }), (req, res) => {
   const data = readShare(req.params.id);
   if (!data)              return res.status(404).json({ error: 'not found' });
   if (!editWindowOpen(data)) return res.status(403).json({ error: 'edit window expired' });
@@ -189,7 +193,7 @@ app.put('/api/share/:id', express.json({ limit: '25mb' }), (req, res) => {
 // ---------------------------------------------------------------------------
 app.post(
   '/api/share/:id/upload-media',
-  express.raw({ type: '*/*', limit: '30mb' }),
+  express.raw({ type: '*/*', limit: '15mb' }),
   async (req, res) => {
     if (!readShare(req.params.id)) {
       return res.status(404).json({ error: 'share not found' });

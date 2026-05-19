@@ -250,9 +250,15 @@ export default function App() {
   return (
     <div className="relative w-full h-screen bg-neutral-950 overflow-hidden font-sans text-white">
 
-      {/* 3D Canvas */}
-      <div className={`absolute inset-0 transition-all duration-1000 ${activeMode === 'SIDE_EDIT' ? 'opacity-20 pointer-events-none scale-110 blur-sm' : 'opacity-100'}`}>
-        <Box3D config={config} sides={sides} onSideClick={handleSideClick} onReady={() => setSceneReady(true)} />
+      {/* 3D Canvas — never apply filter:blur to a WebGL canvas, use opacity only */}
+      <div className={`absolute inset-0 transition-all duration-1000 ${activeMode === 'SIDE_EDIT' ? 'opacity-10 pointer-events-none scale-110' : 'opacity-100'}`}>
+        <Box3D
+          config={config}
+          sides={sides}
+          onSideClick={handleSideClick}
+          onReady={() => setSceneReady(true)}
+          suspended={activeMode === 'SIDE_EDIT'}
+        />
       </div>
 
       <LoadingScreen done={loadingDone} />
@@ -284,7 +290,7 @@ export default function App() {
                 </motion.div>
               ) : (
                 <motion.div key="side-editor-back" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className="pointer-events-auto">
-                  <button onClick={handleBackToBox} className="mb-4 px-6 py-3 bg-white/10 hover:bg-white/20 backdrop-blur-xl border border-white/20 rounded-full flex items-center gap-2 transition-colors group">
+                  <button onClick={handleBackToBox} className="mb-4 px-6 py-3 bg-white/10 hover:bg-white/20 safe-blur border border-white/20 rounded-full flex items-center gap-2 transition-colors group">
                     <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                     Return to View
                   </button>
@@ -301,7 +307,7 @@ export default function App() {
               <motion.button
                 onClick={handleShare}
                 whileTap={{ scale: 0.92 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-md border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
               >
                 {shareLoading
                   ? <Loader className="w-4 h-4 animate-spin" />
@@ -314,7 +320,7 @@ export default function App() {
             <motion.button
               onClick={() => setIsViewOnly(true)}
               whileTap={{ scale: 0.92 }}
-              className="flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-md border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+              className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
             >
               <Eye className="w-4 h-4" />
               <span>Preview</span>
@@ -325,7 +331,7 @@ export default function App() {
               <motion.button
                 onClick={() => setShowFinishConfirm(true)}
                 whileTap={{ scale: 0.92 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-md border bg-pink-600/80 hover:bg-pink-600 border-pink-500/40 text-white text-sm font-semibold transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-pink-600/80 hover:bg-pink-600 border-pink-500/40 text-white text-sm font-semibold transition-all"
               >
                 <Check className="w-4 h-4" />
                 <span>End Editing</span>
@@ -335,7 +341,7 @@ export default function App() {
             {/* Show/Hide UI */}
             <button
               onClick={() => setShowUI(!showUI)}
-              className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/10 transition-all active:scale-90"
+              className="p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
               title={showUI ? 'Hide Editor' : 'Show Editor'}
             >
               {showUI ? <Settings className="w-5 h-5 text-neutral-400" /> : <Layers className="w-5 h-5 text-pink-500" />}
@@ -352,7 +358,7 @@ export default function App() {
             {shareUrl && (
               <button
                 onClick={() => { setShowShareToast(true); setToastCopied(false); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-md border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
               >
                 <Share2 className="w-4 h-4" />
                 <span>Share</span>
@@ -361,7 +367,7 @@ export default function App() {
             {!editingLocked && (
               <button
                 onClick={() => setIsViewOnly(false)}
-                className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full border border-white/10 transition-all active:scale-90"
+                className="p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
                 title="Edit"
               >
                 <Pencil className="w-4 h-4 text-neutral-400" />
@@ -372,7 +378,7 @@ export default function App() {
           {/* Bottom: box navigation only */}
           <div className="absolute inset-x-0 bottom-0 p-6 flex justify-center">
             <motion.div initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
-              <div className="flex items-center gap-2 bg-black/70 backdrop-blur-xl rounded-full px-3 py-2 border border-white/[0.07]">
+              <div className="flex items-center gap-2 bg-black/70 safe-blur rounded-full px-3 py-2 border border-white/[0.07]">
                 {config.openLevel > 0 && (
                   <>
                     <button
@@ -395,7 +401,7 @@ export default function App() {
                   onClick={handleToggleOpen}
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                     config.openLevel > 0
-                      ? 'bg-pink-600 shadow-[0_0_12px_rgba(236,72,153,0.5)]'
+                      ? 'bg-pink-600'
                       : 'bg-white hover:scale-105'
                   }`}
                 >
@@ -425,7 +431,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 z-[200] flex items-center justify-center bg-black/60 safe-blur"
             onClick={() => setShowFinishConfirm(false)}
           >
             <motion.div
@@ -433,7 +439,7 @@ export default function App() {
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.92, opacity: 0, y: 16 }}
               transition={{ duration: 0.2 }}
-              className="w-80 bg-neutral-900/98 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl"
+              className="w-80 bg-neutral-900/98 safe-blur border border-white/10 rounded-2xl p-6 shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
               <div className="w-12 h-12 bg-pink-500/15 rounded-2xl flex items-center justify-center mb-4 mx-auto">
@@ -476,7 +482,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.96 }}
             transition={{ duration: 0.18 }}
-            className="absolute top-20 right-6 z-[100] w-80 bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl"
+            className="absolute top-20 right-6 z-[100] w-80 bg-neutral-900/95 safe-blur border border-white/10 rounded-2xl p-4 shadow-2xl"
           >
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-semibold text-white">Share link</span>

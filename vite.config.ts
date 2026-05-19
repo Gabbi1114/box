@@ -15,6 +15,17 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            three: ['three'],
+            r3f: ['@react-three/fiber', '@react-three/drei'],
+            motion: ['motion'],
+          },
+        },
+      },
+    },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {
