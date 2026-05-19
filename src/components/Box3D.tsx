@@ -407,14 +407,31 @@ function AutoRotateDriver({ active }: { active: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// Signals parent when the first frame has been rendered
+// ---------------------------------------------------------------------------
+function FirstFrameReady({ onReady }: { onReady: () => void }) {
+  const { invalidate } = useThree();
+  const done = useRef(false);
+  useEffect(() => { invalidate(); }, []);
+  useFrame(() => {
+    if (!done.current) {
+      done.current = true;
+      setTimeout(onReady, 100);
+    }
+  });
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Scene root
 // ---------------------------------------------------------------------------
 export default function Box3D({
-  config, sides, onSideClick,
+  config, sides, onSideClick, onReady,
 }: {
   config: BoxConfig;
   sides: BoxSide[];
   onSideClick: (id: string) => void;
+  onReady?: () => void;
 }) {
   const layersArray = Array.from({ length: config.numLayers }, (_, i) => i);
   const autoRotate  = config.openLevel === 0;
@@ -428,6 +445,7 @@ export default function Box3D({
         gl={{ antialias: true, powerPreference: 'low-power' }}
       >
         <AutoRotateDriver active={autoRotate} />
+        {onReady && <FirstFrameReady onReady={onReady} />}
         <PerspectiveCamera makeDefault position={[7, 7, 7]} fov={45} />
         <OrbitControls
           enablePan={false}

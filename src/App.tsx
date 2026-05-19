@@ -15,6 +15,7 @@ import {
   Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw, Lock,
 } from 'lucide-react';
 import { createShare, updateShare, loadShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
+import LoadingScreen from './components/LoadingScreen.tsx';
 
 const EDITOR_PASSWORD = import.meta.env.VITE_EDITOR_PASSWORD as string | undefined;
 
@@ -85,6 +86,16 @@ export default function App() {
   const isShareLink = !!getShareId();
   const needsPassword = !!EDITOR_PASSWORD && !isShareLink;
   const [unlocked, setUnlocked] = useState(() => !needsPassword);
+
+  // Loading screen — shown until 3D first frame fires AND min time passes
+  const [sceneReady, setSceneReady]   = useState(false);
+  const [minTimeDone, setMinTimeDone] = useState(false);
+  const loadingDone = sceneReady && minTimeDone;
+
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimeDone(true), 1800);
+    return () => clearTimeout(t);
+  }, []);
 
   const [config, setConfig] = useState<BoxConfig>(DEFAULT_CONFIG);
   const [sides, setSides] = useState<BoxSide[]>([]);
@@ -243,8 +254,10 @@ export default function App() {
 
       {/* 3D Canvas */}
       <div className={`absolute inset-0 transition-all duration-1000 ${activeMode === 'SIDE_EDIT' ? 'opacity-20 pointer-events-none scale-110 blur-sm' : 'opacity-100'}`}>
-        <Box3D config={config} sides={sides} onSideClick={handleSideClick} />
+        <Box3D config={config} sides={sides} onSideClick={handleSideClick} onReady={() => setSceneReady(true)} />
       </div>
+
+      <LoadingScreen done={loadingDone} />
 
       {/* ── EDIT MODE UI ── */}
       {!isViewOnly && (
