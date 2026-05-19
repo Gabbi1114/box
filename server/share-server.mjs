@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
@@ -80,13 +80,40 @@ try {
 const safeId  = (id) => path.basename(String(id)).replace(/[^a-zA-Z0-9_-]/g, '');
 const jsonPath = (id) => path.join(DATA_DIR, `${safeId(id)}.json`);
 
-function readShare(id) {
-  try { return JSON.parse(fs.readFileSync(jsonPath(id), 'utf8')); }
-  catch { return null; }
+// Always write to local disk. If R2 is configured, also persist there so data
+// survives Render service restarts (Render free tier has ephemeral disk).
+async function writeShare(id, data) {
+  const json = JSON.stringify(data, null, 2);
+  fs.writeFileSync(jsonPath(id), json, 'utf8');
+  if (r2) {
+    await r2.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: `shares/${safeId(id)}.json`,
+      Body: json,
+      ContentType: 'application/json',
+      CacheControl: 'no-cache, no-store',
+    })).catch(e => console.warn('[share] R2 share write failed:', e.message));
+  }
 }
 
-function writeShare(id, data) {
-  fs.writeFileSync(jsonPath(id), JSON.stringify(data, null, 2), 'utf8');
+// Try local disk first (fast, works within same Render instance). If missing —
+// which happens after a restart — fall back to R2 so the data is recovered.
+async function readShare(id) {
+  try { return JSON.parse(fs.readFileSync(jsonPath(id), 'utf8')); } catch {}
+  if (!r2) return null;
+  try {
+    const res = await r2.send(new GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: `shares/${safeId(id)}.json`,
+    }));
+    const text = await res.Body.transformToString();
+    const data = JSON.parse(text);
+    // Cache locally so subsequent reads are instant
+    fs.writeFileSync(jsonPath(id), JSON.stringify(data, null, 2), 'utf8');
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 function editWindowOpen(share) {
@@ -116,7 +143,7 @@ async function convertImage(buf, mime, hd = false) {
       fit: 'inside', withoutEnlargement: true,
       kernel: sharp.kernel.lanczos3,
     });
-    const avif = await resized.avif({ quality: hd ? 70 : 62, effort: 4 }).toBuffer();
+    const avif = await resized.avif({ quality: hd ? 85 : 80, effort: 4 }).toBuffer();
     return { body: avif, contentType: 'image/avif', ext: '.avif' };
   } catch (e) {
     console.warn('[share] AVIF conversion failed, storing original:', e.message);
@@ -144,16 +171,16 @@ app.use((req, res, next) => {
 // ---------------------------------------------------------------------------
 // POST /api/share — create new share
 // ---------------------------------------------------------------------------
-app.post('/api/share', express.json({ limit: '5mb' }), (req, res) => {
+app.post('/api/share', express.json({ limit: '5mb' }), async (req, res) => {
   const { config, sides } = req.body ?? {};
   if (!config || !sides) {
     return res.status(400).json({ error: 'config and sides are required' });
   }
 
-  const id       = crypto.randomBytes(12).toString('base64url');
+  const id        = crypto.randomBytes(12).toString('base64url');
   const editUntil = new Date(Date.now() + MAX_EDIT_DAYS * 864e5).toISOString();
 
-  writeShare(id, {
+  await writeShare(id, {
     v: 1, config, sides,
     editUntil,
     createdAt: new Date().toISOString(),
@@ -166,8 +193,8 @@ app.post('/api/share', express.json({ limit: '5mb' }), (req, res) => {
 // ---------------------------------------------------------------------------
 // GET /api/share/:id — load share
 // ---------------------------------------------------------------------------
-app.get('/api/share/:id', (req, res) => {
-  const data = readShare(req.params.id);
+app.get('/api/share/:id', async (req, res) => {
+  const data = await readShare(req.params.id);
   if (!data) return res.status(404).json({ error: 'not found' });
   res.json(data);
 });
@@ -175,15 +202,15 @@ app.get('/api/share/:id', (req, res) => {
 // ---------------------------------------------------------------------------
 // PUT /api/share/:id — update share (within edit window)
 // ---------------------------------------------------------------------------
-app.put('/api/share/:id', express.json({ limit: '5mb' }), (req, res) => {
-  const data = readShare(req.params.id);
-  if (!data)              return res.status(404).json({ error: 'not found' });
+app.put('/api/share/:id', express.json({ limit: '5mb' }), async (req, res) => {
+  const data = await readShare(req.params.id);
+  if (!data)                 return res.status(404).json({ error: 'not found' });
   if (!editWindowOpen(data)) return res.status(403).json({ error: 'edit window expired' });
 
   const { config, sides } = req.body ?? {};
   if (!config || !sides) return res.status(400).json({ error: 'config and sides required' });
 
-  writeShare(req.params.id, { ...data, config, sides });
+  await writeShare(req.params.id, { ...data, config, sides });
   console.log(`[share] updated  ${req.params.id}`);
   res.json({ ok: true });
 });
@@ -195,7 +222,7 @@ app.post(
   '/api/share/:id/upload-media',
   express.raw({ type: '*/*', limit: '15mb' }),
   async (req, res) => {
-    if (!readShare(req.params.id)) {
+    if (!await readShare(req.params.id)) {
       return res.status(404).json({ error: 'share not found' });
     }
 

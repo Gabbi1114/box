@@ -209,6 +209,17 @@ export default function App() {
     setToastCopied(false);
   }, [shareLoading, shareUrl, config, sides]);
 
+  // Lazily creates a share the first time media needs to be uploaded.
+  // Called from SideEditor when the user picks a photo but no share exists yet.
+  const getOrCreateShareId = useCallback(async (): Promise<string | null> => {
+    if (shareId) return shareId;
+    const result = await createShare(config, sides);
+    if (!result.ok) return null;
+    setShareId(result.id);
+    setShareUrl(result.url);
+    return result.id;
+  }, [shareId, config, sides]);
+
   const handleCopyToast = useCallback(async () => {
     if (!shareUrl) return;
     try { await navigator.clipboard.writeText(shareUrl); } catch { /* ignore */ }
@@ -527,6 +538,7 @@ export default function App() {
                 onClose={handleBackToBox}
                 config={config}
                 shareId={shareId ?? undefined}
+                getOrCreateShareId={getOrCreateShareId}
               />
             </div>
           </motion.div>

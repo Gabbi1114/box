@@ -10,8 +10,9 @@ interface SideEditorProps {
   config: BoxConfig;
   onUpdate: (elements: GraphicElement[]) => void;
   onClose: () => void;
-  /** When set, images are uploaded to the share server and converted to AVIF */
   shareId?: string;
+  /** Creates a share on demand so photo uploads always go to the server/CDN */
+  getOrCreateShareId?: () => Promise<string | null>;
 }
 
 const TEXT_COLORS = ['#ffffff', '#000000', '#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa'];
@@ -28,7 +29,7 @@ interface GifResult {
   url: string; // mp4 preferred, gif fallback
 }
 
-export default function SideEditor({ side, config, onUpdate, onClose, shareId }: SideEditorProps) {
+export default function SideEditor({ side, config, onUpdate, onClose, shareId, getOrCreateShareId }: SideEditorProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [canvasSize, setCanvasSize] = useState(0);
@@ -140,9 +141,11 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId }:
    * server for AVIF conversion; otherwise a local blob URL is used as fallback.
    */
   const handleImageFile = async (file: File) => {
-    if (shareId) {
-      setUploading(true);
-      const serverUrl = await uploadMedia(shareId, file);
+    setUploading(true);
+    // Resolve or lazily create a share ID so the photo goes to the server/CDN
+    const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
+    if (effectiveShareId) {
+      const serverUrl = await uploadMedia(effectiveShareId, file);
       setUploading(false);
       if (serverUrl) {
         const el: GraphicElement = {
@@ -154,7 +157,8 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId }:
         return;
       }
     }
-    // Fallback: blob URL (works locally, won't survive a share reload)
+    setUploading(false);
+    // Last-resort fallback: local blob URL (won't survive a share reload)
     const url = URL.createObjectURL(file);
     const el: GraphicElement = {
       id: uuidv4(), type: 'image', content: url,

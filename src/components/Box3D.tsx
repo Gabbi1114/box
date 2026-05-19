@@ -33,6 +33,11 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     ctx.fillRect(0, 0, RES, RES);
     const texture = new THREE.CanvasTexture(canvas);
     texture.flipY = true;
+    // The inner face mesh has rotation [0,π,0] which flips the U axis.
+    // Negate repeat.x to un-mirror so placed elements appear at the correct position/rotation.
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.repeat.x = -1;
+    texture.offset.x = 1;
     texture.channel = 0;
     return { canvas, ctx, texture };
   }, []);
@@ -45,6 +50,8 @@ function useSideTexture(side: BoxSide, innerColor: string) {
 
   useEffect(() => {
     drawFn.current = () => {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.fillStyle = innerColor;
       ctx.fillRect(0, 0, RES, RES);
 
