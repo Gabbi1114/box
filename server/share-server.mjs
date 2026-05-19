@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
 const DATA_DIR  = path.join(ROOT, 'share-data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
-const PORT      = Number(process.env.SHARE_PORT ?? 3001);
+const PORT      = Number(process.env.PORT ?? process.env.SHARE_PORT ?? 3001);
 const MAX_EDIT_DAYS = Number(process.env.SHARE_MAX_EDIT_DAYS ?? 5);
 
 fs.mkdirSync(DATA_DIR,  { recursive: true });
