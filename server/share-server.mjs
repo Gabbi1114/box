@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { S3Client, PutObjectCommand, GetObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
@@ -39,22 +39,12 @@ const r2 = R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_KEY && R2_BUCKET
 
 if (r2) {
   console.log(`[share] ✓ R2 enabled — bucket: ${R2_BUCKET}`);
-  // Set CORS on the bucket so browsers can load images cross-origin
-  r2.send(new PutBucketCorsCommand({
-    Bucket: R2_BUCKET,
-    CORSConfiguration: {
-      CORSRules: [{
-        AllowedOrigins: ['*'],
-        AllowedMethods: ['GET', 'HEAD'],
-        AllowedHeaders: ['*'],
-        MaxAgeSeconds: 86400,
-      }],
-    },
-  }))
-    .then(() => console.log('[share] ✓ R2 CORS policy applied'))
-    .catch(e  => console.warn('[share] ✗ R2 CORS setup failed:', e.message));
 } else {
   console.warn('[share] ✗ R2 not configured — media stored on local disk');
+}
+
+function serverBase() {
+  return process.env.PUBLIC_API_BASE ?? process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${PORT}`;
 }
 
 async function storeMedia(shareId, slug, body, contentType) {
@@ -67,15 +57,15 @@ async function storeMedia(shareId, slug, body, contentType) {
       ContentType: contentType,
       CacheControl: 'public, max-age=31536000, immutable',
     }));
-    return `${R2_PUBLIC_URL}/${key}`;
+    // Proxy through our server so the browser gets CORS headers (R2 token lacks PutBucketCors)
+    return `${serverBase()}/api/r2/${key}`;
   }
 
   // Local fallback
   const dir = path.join(MEDIA_DIR, shareId);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, slug), body);
-  const base = process.env.PUBLIC_API_BASE ?? process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${PORT}`;
-  return `${base}/api/media/${shareId}/${slug}`;
+  return `${serverBase()}/api/media/${shareId}/${slug}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +251,23 @@ app.post(
     res.json({ url, contentType });
   }
 );
+
+// ---------------------------------------------------------------------------
+// GET /api/r2/:shareId/:file — proxy R2 media through server (adds CORS headers)
+// CORS headers are injected by the global middleware above.
+// ---------------------------------------------------------------------------
+app.get('/api/r2/:shareId/:file', async (req, res) => {
+  if (!r2) return res.status(503).end();
+  const key = `${safeId(req.params.shareId)}/${path.basename(req.params.file)}`;
+  try {
+    const obj = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    res.setHeader('Content-Type', obj.ContentType ?? 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    obj.Body.pipe(res);
+  } catch {
+    res.status(404).end();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // GET /api/media/:shareId/:file — serve local media (used when R2 not configured)
