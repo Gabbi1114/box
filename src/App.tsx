@@ -247,8 +247,6 @@ export default function App() {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  if (!unlocked) return <PasswordGate onUnlock={() => setUnlocked(true)} />;
-
   return (
     <div className="relative w-full h-screen bg-neutral-950 overflow-hidden font-sans text-white">
 
@@ -259,8 +257,23 @@ export default function App() {
 
       <LoadingScreen done={loadingDone} />
 
+      {/* Password gate — appears after loading screen fades, covers the app */}
+      <AnimatePresence>
+        {loadingDone && !unlocked && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="absolute inset-0 z-[500]"
+          >
+            <PasswordGate onUnlock={() => setUnlocked(true)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── EDIT MODE UI ── */}
-      {!isViewOnly && (
+      {!isViewOnly && unlocked && (
         <>
           {/* Bottom editor bar */}
           <div className={`absolute inset-x-0 bottom-0 p-6 flex justify-center pointer-events-none transition-all duration-500 ${showUI ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}>
@@ -332,7 +345,7 @@ export default function App() {
       )}
 
       {/* ── VIEW-ONLY UI ── */}
-      {isViewOnly && (
+      {isViewOnly && unlocked && (
         <>
           {/* Top-right: share + edit */}
           <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
