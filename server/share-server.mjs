@@ -1,12 +1,13 @@
 /**
  * Explosion Box Studio — Share Server
- * Port 3001 | Handles share persistence + image → AVIF conversion
+ * Port 3001 | Handles share persistence + image → AVIF conversion + R2 upload
  */
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
@@ -17,6 +18,50 @@ const MAX_EDIT_DAYS = Number(process.env.SHARE_MAX_EDIT_DAYS ?? 5);
 
 fs.mkdirSync(DATA_DIR,  { recursive: true });
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
+
+// ---------------------------------------------------------------------------
+// R2 — optional, falls back to local disk if env vars not set
+// ---------------------------------------------------------------------------
+const R2_ACCOUNT_ID    = process.env.R2_ACCOUNT_ID;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_KEY    = process.env.R2_SECRET_ACCESS_KEY;
+const R2_BUCKET        = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_URL    = process.env.R2_PUBLIC_URL?.replace(/\/$/, ''); // no trailing slash
+
+const r2 = R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_KEY && R2_BUCKET
+  ? new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_KEY },
+    })
+  : null;
+
+if (r2) {
+  console.log(`[share] ✓ R2 enabled — bucket: ${R2_BUCKET}`);
+} else {
+  console.warn('[share] ✗ R2 not configured — media stored on local disk');
+}
+
+async function storeMedia(shareId, slug, body, contentType) {
+  if (r2) {
+    const key = `${shareId}/${slug}`;
+    await r2.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable',
+    }));
+    return `${R2_PUBLIC_URL}/${key}`;
+  }
+
+  // Local fallback
+  const dir = path.join(MEDIA_DIR, shareId);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, slug), body);
+  const base = process.env.PUBLIC_API_BASE ?? `http://localhost:${PORT}`;
+  return `${base}/api/media/${shareId}/${slug}`;
+}
 
 // ---------------------------------------------------------------------------
 // Sharp (AVIF conversion) — optional, graceful fallback if not installed
@@ -58,7 +103,6 @@ const MIME_BY_EXT = Object.fromEntries(
 );
 
 async function convertImage(buf, mime, hd = false) {
-  // Always pass GIFs through (they're animated)
   if (mime === 'image/gif' || !sharp) {
     return { body: buf, contentType: mime, ext: EXT_BY_MIME[mime] ?? '.bin' };
   }
@@ -141,7 +185,7 @@ app.put('/api/share/:id', express.json({ limit: '25mb' }), (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/share/:id/upload-media — convert image → AVIF, store it
+// POST /api/share/:id/upload-media — convert image → AVIF, store to R2 or disk
 // ---------------------------------------------------------------------------
 app.post(
   '/api/share/:id/upload-media',
@@ -158,19 +202,15 @@ app.post(
     const { body, contentType, ext } = await convertImage(req.body, mime, hd);
 
     const slug = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
-    const dir  = path.join(MEDIA_DIR, safeId(req.params.id));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, slug), body);
+    const url  = await storeMedia(safeId(req.params.id), slug, body, contentType);
 
-    const base = process.env.PUBLIC_API_BASE ?? `http://localhost:${PORT}`;
-    const url  = `${base}/api/media/${safeId(req.params.id)}/${slug}`;
     console.log(`[share] media    ${url}  (${contentType}, ${body.length} bytes)`);
     res.json({ url, contentType });
   }
 );
 
 // ---------------------------------------------------------------------------
-// GET /api/media/:shareId/:file — serve stored media (immutable cache)
+// GET /api/media/:shareId/:file — serve local media (used when R2 not configured)
 // ---------------------------------------------------------------------------
 app.get('/api/media/:shareId/:file', (req, res) => {
   const filePath = path.join(
