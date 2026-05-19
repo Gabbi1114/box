@@ -17,7 +17,6 @@ import {
 import { createShare, updateShare, loadShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
 
 const EDITOR_PASSWORD = import.meta.env.VITE_EDITOR_PASSWORD as string | undefined;
-const AUTH_KEY = 'box_studio_auth';
 
 function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [value, setValue] = useState('');
@@ -25,7 +24,6 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
 
   const submit = () => {
     if (value === EDITOR_PASSWORD) {
-      localStorage.setItem(AUTH_KEY, '1');
       onUnlock();
     } else {
       setShake(true);
@@ -86,9 +84,7 @@ const DEFAULT_CONFIG: BoxConfig = {
 export default function App() {
   const isShareLink = !!getShareId();
   const needsPassword = !!EDITOR_PASSWORD && !isShareLink;
-  const [unlocked, setUnlocked] = useState(() =>
-    !needsPassword || localStorage.getItem(AUTH_KEY) === '1'
-  );
+  const [unlocked, setUnlocked] = useState(() => !needsPassword);
 
   const [config, setConfig] = useState<BoxConfig>(DEFAULT_CONFIG);
   const [sides, setSides] = useState<BoxSide[]>([]);
