@@ -33,6 +33,7 @@ const r2 = R2_ENDPOINT && R2_ACCESS_KEY_ID && R2_SECRET_KEY && R2_BUCKET
       region: 'auto',
       endpoint: R2_ENDPOINT,
       credentials: { accessKeyId: R2_ACCESS_KEY_ID, secretAccessKey: R2_SECRET_KEY },
+      maxAttempts: 1,  // never retry — bad creds cause 30s+ backoff loops otherwise
     })
   : null;
 
@@ -166,6 +167,13 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/health — quick liveness check (also wakes Render from sleep)
+// ---------------------------------------------------------------------------
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, r2: !!r2, sharp: !!sharp, ts: Date.now() });
 });
 
 // ---------------------------------------------------------------------------

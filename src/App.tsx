@@ -109,6 +109,7 @@ export default function App() {
   const [showShareToast, setShowShareToast] = useState(false);
   const [toastCopied, setToastCopied] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError]   = useState<string | null>(null);
 
   // View-only mode (set when loading from ?share= URL, or after clicking "Done Editing")
   const [isViewOnly, setIsViewOnly]   = useState(false);
@@ -198,11 +199,23 @@ export default function App() {
     }
 
     setShareLoading(true);
+    setShareError(null);
     const result = await createShare(config, sides);
     setShareLoading(false);
 
-    if (!result.ok) return;
+    if (!result.ok) {
+      console.error('[share] create failed:', result.error);
+      const hint = !import.meta.env.VITE_API_BASE
+        ? 'VITE_API_BASE is not set — add it to Cloudflare env vars and redeploy.'
+        : (result.error ?? '').toLowerCase().includes('fetch')
+          ? 'Cannot reach server. Check that box-api is running on Render.'
+          : result.error ?? 'Unknown error';
+      setShareError(hint);
+      setShowShareToast(true);
+      return;
+    }
 
+    setShareError(null);
     setShareId(result.id);
     setShareUrl(result.url);
     setShowShareToast(true);
@@ -485,7 +498,7 @@ export default function App() {
 
       {/* ── SHARE TOAST ── */}
       <AnimatePresence>
-        {showShareToast && shareUrl && (
+        {showShareToast && (
           <motion.div
             initial={{ opacity: 0, y: -12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -494,33 +507,49 @@ export default function App() {
             className="absolute top-20 right-6 z-[100] w-80 bg-neutral-900/95 safe-blur border border-white/10 rounded-2xl p-4 shadow-2xl"
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold text-white">Share link</span>
-              <button onClick={() => setShowShareToast(false)} className="p-1 text-neutral-500 hover:text-white transition-colors">
+              <span className="text-sm font-semibold text-white">
+                {shareError ? 'Share failed' : 'Share link'}
+              </span>
+              <button onClick={() => { setShowShareToast(false); setShareError(null); }} className="p-1 text-neutral-500 hover:text-white transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* URL display */}
-            <div className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2.5 mb-3">
-              <span className="flex-1 text-xs text-neutral-300 truncate font-mono">{shareUrl}</span>
-            </div>
-
-            {/* Copy button */}
-            <button
-              onClick={handleCopyToast}
-              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                toastCopied
-                  ? 'bg-green-500/20 text-green-300 border border-green-500/30'
-                  : 'bg-white text-black hover:bg-neutral-100'
-              }`}
-            >
-              {toastCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              {toastCopied ? 'Copied!' : 'Copy link'}
-            </button>
-
-            <p className="text-[10px] text-neutral-600 text-center mt-2">
-              Anyone with this link can view your box
-            </p>
+            {shareError ? (
+              /* Error state */
+              <>
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5 mb-3">
+                  <p className="text-xs text-red-300 leading-relaxed">{shareError}</p>
+                </div>
+                <button
+                  onClick={() => { setShowShareToast(false); setShareError(null); setTimeout(handleShare, 100); }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-white text-black hover:bg-neutral-100 transition-all"
+                >
+                  Try again
+                </button>
+              </>
+            ) : shareUrl ? (
+              /* Success state */
+              <>
+                <div className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2.5 mb-3">
+                  <span className="flex-1 text-xs text-neutral-300 truncate font-mono">{shareUrl}</span>
+                </div>
+                <button
+                  onClick={handleCopyToast}
+                  className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                    toastCopied
+                      ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                      : 'bg-white text-black hover:bg-neutral-100'
+                  }`}
+                >
+                  {toastCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {toastCopied ? 'Copied!' : 'Copy link'}
+                </button>
+                <p className="text-[10px] text-neutral-600 text-center mt-2">
+                  Anyone with this link can view your box
+                </p>
+              </>
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
