@@ -17,7 +17,7 @@ import {
 import { createShare, updateShare, loadShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
 import LoadingScreen from './components/LoadingScreen.tsx';
 
-const EDITOR_PASSWORD = import.meta.env.VITE_EDITOR_PASSWORD as string | undefined;
+const EDITOR_PASSWORD = import.meta.env.VITE_STUDIO_PASSWORD as string | undefined;
 
 function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [value, setValue] = useState('');
