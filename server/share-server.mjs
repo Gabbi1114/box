@@ -60,7 +60,7 @@ async function storeMedia(shareId, slug, body, contentType) {
   const dir = path.join(MEDIA_DIR, shareId);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, slug), body);
-  const base = process.env.PUBLIC_API_BASE ?? `http://localhost:${PORT}`;
+  const base = process.env.PUBLIC_API_BASE ?? process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${PORT}`;
   return `${base}/api/media/${shareId}/${slug}`;
 }
 

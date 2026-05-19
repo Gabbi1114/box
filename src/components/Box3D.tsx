@@ -50,6 +50,11 @@ function useSideTexture(side: BoxSide, innerColor: string) {
       ctx.fillStyle = innerColor;
       ctx.fillRect(0, 0, RES, RES);
 
+      // Scale factor: editor canvas is min(55vh, 55vw) CSS px; texture is RES px.
+      // Multiply all absolute sizes by this ratio so items look the same proportion.
+      const designCanvasSize = Math.min(window.innerHeight * 0.55, window.innerWidth * 0.55);
+      const texScale = RES / designCanvasSize;
+
       for (const el of side.elements) {
         ctx.save();
         ctx.translate((el.x / 100) * RES, (el.y / 100) * RES);
@@ -57,7 +62,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
         ctx.scale(el.scale, el.scale);
 
         if (el.type === 'text') {
-          ctx.font = `bold ${el.fontSize ?? 24}px sans-serif`;
+          ctx.font = `bold ${(el.fontSize ?? 24) * texScale}px sans-serif`;
           ctx.fillStyle = el.color ?? '#ffffff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
@@ -70,13 +75,16 @@ function useSideTexture(side: BoxSide, innerColor: string) {
             const w = (src as HTMLVideoElement).videoWidth  || (src as HTMLImageElement).naturalWidth;
             const h = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight;
             if (w && h) {
-              const fit = Math.min(RES / w, RES / h);
-              ctx.drawImage(src as CanvasImageSource, -(w * fit) / 2, -(h * fit) / 2, w * fit, h * fit);
+              // Fit the image to the same proportion as it appears in the editor canvas
+              const editorFit = Math.min(designCanvasSize / w, designCanvasSize / h);
+              const drawW = w * editorFit * texScale;
+              const drawH = h * editorFit * texScale;
+              ctx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
             }
           }
         } else if (el.type === 'sticker') {
           const emojiMap: Record<string, string> = { heart: '❤️', star: '⭐', sparkle: '✨', face: '😊' };
-          ctx.font = `${RES / 10}px serif`;
+          ctx.font = `${72 * texScale}px serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(emojiMap[el.content] ?? '❤️', 0, 0);
