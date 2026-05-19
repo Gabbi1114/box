@@ -6,8 +6,13 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+
+const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.join(__dirname, '..');
@@ -125,10 +130,60 @@ function editWindowOpen(share) {
   return !share.editUntil || new Date(share.editUntil) > new Date();
 }
 
+// ---------------------------------------------------------------------------
+// ffmpeg (video → WebM) — optional, graceful fallback if not installed
+// ---------------------------------------------------------------------------
+let ffmpegBin = null;
+try {
+  ffmpegBin = (await import('ffmpeg-static')).default;
+  console.log('[share] ✓ ffmpeg loaded — video transcoding enabled');
+} catch {
+  console.warn('[share] ✗ ffmpeg-static not found — videos stored as-is');
+}
+
+async function transcodeVideo(buf, mime) {
+  const srcExt = EXT_BY_MIME[mime] ?? '.mp4';
+
+  if (!ffmpegBin) {
+    return { body: buf, contentType: mime, ext: srcExt };
+  }
+
+  const tmpIn  = path.join(os.tmpdir(), `box-vin-${Date.now()}.tmp`);
+  const tmpOut = path.join(os.tmpdir(), `box-vout-${Date.now()}.webm`);
+
+  try {
+    fs.writeFileSync(tmpIn, buf);
+
+    await execFileAsync(ffmpegBin, [
+      '-i', tmpIn,
+      '-c:v', 'libvpx-vp9',
+      '-crf', '33', '-b:v', '0',  // constant quality VP9
+      '-an',                        // strip audio (box faces are silent looping clips)
+      '-deadline', 'realtime',      // fastest VP9 mode — important on Render free tier
+      '-cpu-used', '8',
+      '-y', tmpOut,
+    ], { timeout: 90_000 });
+
+    const body = fs.readFileSync(tmpOut);
+    console.log(`[share] video    transcode OK  ${(buf.length / 1e6).toFixed(1)}MB → ${(body.length / 1e6).toFixed(1)}MB`);
+    return { body, contentType: 'video/webm', ext: '.webm' };
+  } catch (e) {
+    console.warn('[share] Video transcode failed, storing original:', e.message?.slice(0, 120));
+    return { body: buf, contentType: mime, ext: srcExt };
+  } finally {
+    try { fs.unlinkSync(tmpIn);  } catch {}
+    try { fs.unlinkSync(tmpOut); } catch {}
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MIME / extension maps
+// ---------------------------------------------------------------------------
 const EXT_BY_MIME = {
   'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
   'image/webp': '.webp', 'image/avif': '.avif',
-  'video/mp4': '.mp4',  'video/webm': '.webm',
+  'video/mp4': '.mp4',  'video/webm': '.webm', 'video/ogg': '.ogg',
+  'video/quicktime': '.mov', 'video/x-m4v': '.m4v',
 };
 const MIME_BY_EXT = Object.fromEntries(
   Object.entries(EXT_BY_MIME).map(([m, e]) => [e, m])
@@ -228,21 +283,24 @@ app.put('/api/share/:id', express.json({ limit: '5mb' }), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/share/:id/upload-media — convert image → AVIF, store to R2 or disk
+// POST /api/share/:id/upload-media — convert image → AVIF / video → WebM, store to R2
 // ---------------------------------------------------------------------------
 app.post(
   '/api/share/:id/upload-media',
-  express.raw({ type: '*/*', limit: '15mb' }),
+  express.raw({ type: '*/*', limit: '100mb' }),
   async (req, res) => {
     if (!await readShare(req.params.id)) {
       return res.status(404).json({ error: 'share not found' });
     }
 
-    const mime = (req.headers['content-type'] ?? '').split(';')[0].trim()
-                 || 'application/octet-stream';
-    const hd   = req.query.hd === '1';
+    const mime    = (req.headers['content-type'] ?? '').split(';')[0].trim()
+                    || 'application/octet-stream';
+    const hd      = req.query.hd === '1';
+    const isVideo = mime.startsWith('video/');
 
-    const { body, contentType, ext } = await convertImage(req.body, mime, hd);
+    const { body, contentType, ext } = isVideo
+      ? await transcodeVideo(req.body, mime)
+      : await convertImage(req.body, mime, hd);
 
     const slug = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
     const url  = await storeMedia(safeId(req.params.id), slug, body, contentType);

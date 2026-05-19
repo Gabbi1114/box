@@ -131,9 +131,17 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   };
 
   const handleVideoFile = async (file: File) => {
-    // Videos go straight as blob URLs (server transcoding not yet implemented)
-    const url = URL.createObjectURL(file);
-    addVideo(url);
+    setShowVideoInput(false);
+    setUploading(true);
+    const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
+    if (effectiveShareId) {
+      const serverUrl = await uploadMedia(effectiveShareId, file);
+      setUploading(false);
+      if (serverUrl) { addVideo(serverUrl); return; }
+    }
+    setUploading(false);
+    // Fallback: local blob (won't survive share reload, but works for current session)
+    addVideo(URL.createObjectURL(file));
   };
 
   /**
