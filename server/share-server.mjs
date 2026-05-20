@@ -141,8 +141,16 @@ try {
   console.warn('[share] ✗ ffmpeg-static not found — videos stored as-is');
 }
 
+const PASSTHROUGH_VIDEO = new Set(['video/mp4', 'video/webm', 'video/ogg']);
+
 async function transcodeVideo(buf, mime) {
   const srcExt = EXT_BY_MIME[mime] ?? '.mp4';
+
+  // MP4 and WebM are already browser-ready — skip transcoding for instant upload
+  if (PASSTHROUGH_VIDEO.has(mime)) {
+    console.log(`[share] video    pass-through  ${(buf.length / 1e6).toFixed(1)}MB (${mime})`);
+    return { body: buf, contentType: mime, ext: srcExt };
+  }
 
   if (!ffmpegBin) {
     return { body: buf, contentType: mime, ext: srcExt };
@@ -196,17 +204,19 @@ async function convertImage(buf, mime, hd = false) {
   try {
     const img     = sharp(buf, { failOn: 'none' }).rotate();
     const meta    = await img.metadata();
-    const maxSide = hd ? 2560 : 2200;
+    // 1600px is 1.5× the 3D texture resolution — plenty of detail, much faster to encode
+    const maxSide = hd ? 2048 : 1600;
     const resized = img.resize({
       width:  meta.width  > maxSide ? maxSide : undefined,
       height: meta.height > maxSide ? maxSide : undefined,
       fit: 'inside', withoutEnlargement: true,
       kernel: sharp.kernel.lanczos3,
     });
-    const avif = await resized.avif({ quality: hd ? 85 : 80, effort: 4 }).toBuffer();
-    return { body: avif, contentType: 'image/avif', ext: '.avif' };
+    // WebP at effort:0 encodes ~10× faster than AVIF; still excellent quality + small files
+    const webp = await resized.webp({ quality: hd ? 88 : 82, effort: 0 }).toBuffer();
+    return { body: webp, contentType: 'image/webp', ext: '.webp' };
   } catch (e) {
-    console.warn('[share] AVIF conversion failed, storing original:', e.message);
+    console.warn('[share] WebP conversion failed, storing original:', e.message);
     return { body: buf, contentType: mime, ext: EXT_BY_MIME[mime] ?? '.bin' };
   }
 }

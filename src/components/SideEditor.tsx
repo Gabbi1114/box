@@ -145,15 +145,44 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   };
 
   /**
-   * Upload an image file. If a shareId is active the file is sent to the share
-   * server for AVIF conversion; otherwise a local blob URL is used as fallback.
+   * Resize an image client-side to max 1600px JPEG before uploading.
+   * Reduces upload size and server work by ~10× for typical phone photos.
+   */
+  const resizeForUpload = (file: File): Promise<File> =>
+    new Promise(resolve => {
+      const MAX = 1600;
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const w = Math.round(img.width  * scale);
+        const h = Math.round(img.height * scale);
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d')!;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, w, h);
+        cv.toBlob(
+          blob => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
+          'image/jpeg', 0.88,
+        );
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); }; // fallback: original
+      img.src = url;
+    });
+
+  /**
+   * Upload an image file. Resizes client-side first for speed, then sends to
+   * the share server for WebP conversion and R2 storage.
    */
   const handleImageFile = async (file: File) => {
     setUploading(true);
     // Resolve or lazily create a share ID so the photo goes to the server/CDN
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
-      const serverUrl = await uploadMedia(effectiveShareId, file);
+      const toUpload  = await resizeForUpload(file);          // resize first → much faster upload + server
+      const serverUrl = await uploadMedia(effectiveShareId, toUpload);
       setUploading(false);
       if (serverUrl) {
         const el: GraphicElement = {
