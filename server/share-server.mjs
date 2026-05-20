@@ -157,24 +157,26 @@ async function transcodeVideo(buf, mime) {
   }
 
   const tmpIn  = path.join(os.tmpdir(), `box-vin-${Date.now()}.tmp`);
-  const tmpOut = path.join(os.tmpdir(), `box-vout-${Date.now()}.webm`);
+  const tmpOut = path.join(os.tmpdir(), `box-vout-${Date.now()}.mp4`);
 
   try {
     fs.writeFileSync(tmpIn, buf);
 
+    // H.264 MP4: universally supported (iOS, Android, desktop)
+    // ultrafast preset makes encoding ~10× faster than VP9 on Render free tier
     await execFileAsync(ffmpegBin, [
       '-i', tmpIn,
-      '-c:v', 'libvpx-vp9',
-      '-crf', '33', '-b:v', '0',  // constant quality VP9
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '28',                 // good quality, small file
       '-an',                        // strip audio (box faces are silent looping clips)
-      '-deadline', 'realtime',      // fastest VP9 mode — important on Render free tier
-      '-cpu-used', '8',
+      '-movflags', '+faststart',    // move MP4 metadata to front for instant streaming
       '-y', tmpOut,
     ], { timeout: 90_000 });
 
     const body = fs.readFileSync(tmpOut);
     console.log(`[share] video    transcode OK  ${(buf.length / 1e6).toFixed(1)}MB → ${(body.length / 1e6).toFixed(1)}MB`);
-    return { body, contentType: 'video/webm', ext: '.webm' };
+    return { body, contentType: 'video/mp4', ext: '.mp4' };
   } catch (e) {
     console.warn('[share] Video transcode failed, storing original:', e.message?.slice(0, 120));
     return { body: buf, contentType: mime, ext: srcExt };
@@ -322,15 +324,26 @@ app.post(
 
 // ---------------------------------------------------------------------------
 // GET /api/r2/:shareId/:file — proxy R2 media through server (adds CORS headers)
-// CORS headers are injected by the global middleware above.
+// Supports HTTP Range requests — required by mobile Safari for video playback.
 // ---------------------------------------------------------------------------
 app.get('/api/r2/:shareId/:file', async (req, res) => {
   if (!r2) return res.status(503).end();
   const key = `${safeId(req.params.shareId)}/${path.basename(req.params.file)}`;
   try {
-    const obj = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
-    res.setHeader('Content-Type', obj.ContentType ?? 'application/octet-stream');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    const params = { Bucket: R2_BUCKET, Key: key };
+    const range  = req.headers['range'];
+    if (range) params.Range = range;
+
+    const obj = await r2.send(new GetObjectCommand(params));
+
+    res.setHeader('Content-Type',   obj.ContentType    ?? 'application/octet-stream');
+    res.setHeader('Accept-Ranges',  'bytes');
+    res.setHeader('Cache-Control',  'public, max-age=31536000, immutable');
+    if (obj.ContentLength) res.setHeader('Content-Length', String(obj.ContentLength));
+    if (range && obj.ContentRange) {
+      res.setHeader('Content-Range', obj.ContentRange);
+      res.status(206);
+    }
     obj.Body.pipe(res);
   } catch {
     res.status(404).end();

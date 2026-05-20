@@ -82,12 +82,16 @@ function useSideTexture(side: BoxSide, innerColor: string) {
       ctx.fillStyle = innerColor;
       ctx.fillRect(0, 0, RES, RES);
 
-      // Scale factor: editor canvas is min(55vh, 55vw) CSS px; texture is RES px.
-      // Multiply all absolute sizes by this ratio so items look the same proportion.
-      const designCanvasSize = Math.min(window.innerHeight * 0.55, window.innerWidth * 0.55);
-      const texScale = RES / designCanvasSize;
+      // Scale factor: editor canvas px → texture px.
+      // Use the designCanvasSize stamped on each element (exact size when it was placed)
+      // so text/images look identical regardless of which device the editor was on.
+      const windowCanvasSize = Math.min(window.innerHeight * 0.55, window.innerWidth * 0.55);
 
       for (const el of side.elements) {
+        // Per-element scale: use stored canvas size (phone/desktop aware), fall back to window
+        const dcs = el.designCanvasSize ?? windowCanvasSize;
+        const texScale = RES / dcs;
+
         ctx.save();
         ctx.translate((el.x / 100) * RES, (el.y / 100) * RES);
         ctx.rotate((el.rotation * Math.PI) / 180);
@@ -108,7 +112,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
             const h = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight;
             if (w && h) {
               // Mirror editor behaviour: scale down if larger than canvas, don't scale up small items
-              const fitScale = Math.min(1, designCanvasSize / w, designCanvasSize / h);
+              const fitScale = Math.min(1, dcs / w, dcs / h);
               const drawW = w * fitScale * texScale;
               const drawH = h * fitScale * texScale;
               ctx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
@@ -116,7 +120,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
           }
         } else if (el.type === 'sticker') {
           const emojiMap: Record<string, string> = { heart: '❤️', star: '⭐', sparkle: '✨', face: '😊' };
-          ctx.font = `${72 * texScale}px serif`;
+          ctx.font = `${72 * texScale}px serif`;  // 72px in editor → scaled to texture
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(emojiMap[el.content] ?? '❤️', 0, 0);

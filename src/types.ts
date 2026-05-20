@@ -8,6 +8,9 @@ export interface GraphicElement {
   rotation: number;
   color?: string;
   fontSize?: number;
+  /** Actual editor canvas size (px) when element was placed — used for consistent
+   *  texture scaling across devices with different screen sizes. */
+  designCanvasSize?: number;
 }
 
 export interface BoxSide {

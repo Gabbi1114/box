@@ -67,6 +67,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         ? 'https://images.unsplash.com/photo-1518173946687-a4c8a9b749f5?w=500&auto=format&fit=crop&q=60'
         : 'heart',
       x: 50, y: 50, scale: 1, rotation: 0, color: '#ffffff', fontSize: 24,
+      designCanvasSize: canvasSize || undefined,
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -109,6 +110,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       type: 'image',
       content: url,
       x: 50, y: 50, scale: 0.6, rotation: 0, color: '#ffffff', fontSize: 24,
+      designCanvasSize: canvasSize || undefined,
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -124,6 +126,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       type: 'image',
       content: url.trim(),
       x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
+      designCanvasSize: canvasSize || undefined,
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -189,6 +192,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         const el: GraphicElement = {
           id: uuidv4(), type: 'image', content: serverUrl,
           x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
+          designCanvasSize: canvasSize || undefined,
         };
         onUpdate([...side.elements, el]);
         setSelectedId(el.id);
