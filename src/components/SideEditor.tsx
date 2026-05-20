@@ -93,8 +93,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       setGifResults((data.results ?? []).map((g: any) => ({
         id: g.id,
         preview: g.media[0]?.tinygif?.url ?? g.media[0]?.gif?.url,
-        // prefer mp4 — animates reliably on canvas; fall back to gif
-        url: g.media[0]?.mp4?.url ?? g.media[0]?.gif?.url,
+        // Use actual .gif URL — img elements are far lighter than video decoders
+        // and bypass the MAX_VIDEOS cap so unlimited GIFs can show at once
+        url: g.media[0]?.gif?.url ?? g.media[0]?.mp4?.url,
       })).filter((g: GifResult) => g.url));
     } catch {
       setGifResults([]);

@@ -19,6 +19,38 @@ const isVideoUrl = (url: string) =>
 const isAnimated = (url: string) => isGifUrl(url) || isVideoUrl(url);
 
 // ---------------------------------------------------------------------------
+// Single shared RAF ticker — all animated sides share one loop instead of
+// each running its own setInterval. Throttled to GIF_FPS to avoid hammering
+// the GPU with texture uploads on every frame.
+// ---------------------------------------------------------------------------
+const GIF_FPS   = isIOS ? 6 : 10;          // lower on iOS to save battery
+const GIF_FRAME = 1000 / GIF_FPS;          // ms between texture uploads
+
+type DrawCallback = () => void;
+const _animDrawers = new Set<DrawCallback>();
+let   _rafId: number | null = null;
+let   _lastTick = 0;
+
+function _tick(now: number) {
+  _rafId = requestAnimationFrame(_tick);
+  if (now - _lastTick < GIF_FRAME) return;   // throttle
+  _lastTick = now;
+  _animDrawers.forEach(fn => fn());
+}
+
+function registerAnimDraw(fn: DrawCallback) {
+  if (_animDrawers.size === 0) _rafId = requestAnimationFrame(_tick);
+  _animDrawers.add(fn);
+}
+function unregisterAnimDraw(fn: DrawCallback) {
+  _animDrawers.delete(fn);
+  if (_animDrawers.size === 0 && _rafId !== null) {
+    cancelAnimationFrame(_rafId);
+    _rafId = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Canvas texture hook
 // ---------------------------------------------------------------------------
 function useSideTexture(side: BoxSide, innerColor: string) {
@@ -37,11 +69,11 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     return { canvas, ctx, texture };
   }, []);
 
-  const media    = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>());
-  const gifImgs  = useRef<HTMLImageElement[]>([]);
+  const media      = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>());
+  const gifImgs    = useRef<HTMLImageElement[]>([]);
   const videoElems = useRef<HTMLVideoElement[]>([]);
-  const drawFn   = useRef<() => void>(() => {});
-  const animTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const drawFn     = useRef<() => void>(() => {});
+  const registeredDraw = useRef<DrawCallback | null>(null);
 
   useEffect(() => {
     drawFn.current = () => {
@@ -146,12 +178,17 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     }
   }, [side.elements, innerColor]);
 
-  // Animated textures: redraw at 10 fps via interval, not useFrame
+  // Animated textures: register with the shared RAF ticker (throttled to GIF_FPS)
   const hasAnimated = side.elements.some(el => el.type === 'image' && isAnimated(el.content));
   useEffect(() => {
-    if (!hasAnimated) return;
-    animTimer.current = setInterval(() => { drawFn.current(); }, 100); // 10 fps
-    return () => { if (animTimer.current) clearInterval(animTimer.current); };
+    if (!hasAnimated) {
+      if (registeredDraw.current) { unregisterAnimDraw(registeredDraw.current); registeredDraw.current = null; }
+      return;
+    }
+    const fn: DrawCallback = () => drawFn.current();
+    registeredDraw.current = fn;
+    registerAnimDraw(fn);
+    return () => { unregisterAnimDraw(fn); registeredDraw.current = null; };
   }, [hasAnimated]);
 
   useEffect(() => () => {
@@ -166,7 +203,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
       _activeVideoCount = Math.max(0, _activeVideoCount - 1);
     });
     videoElems.current = [];
-    if (animTimer.current) clearInterval(animTimer.current);
+    if (registeredDraw.current) { unregisterAnimDraw(registeredDraw.current); registeredDraw.current = null; }
   }, []);
 
   return { texture, drawFn };
