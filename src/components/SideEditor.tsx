@@ -36,6 +36,11 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const [uploading, setUploading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Synchronous canvas-size read — avoids the async state-update race where
+  // canvasSize is still 0 if an element is added right after the editor opens.
+  const getCanvasSize = () =>
+    containerRef.current?.offsetWidth || canvasSize || undefined;
+
   // GIF search state
   const [showGifSearch, setShowGifSearch] = useState(false);
   const [gifQuery, setGifQuery] = useState('');
@@ -67,7 +72,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         ? 'https://images.unsplash.com/photo-1518173946687-a4c8a9b749f5?w=500&auto=format&fit=crop&q=60'
         : 'heart',
       x: 50, y: 50, scale: 1, rotation: 0, color: '#ffffff', fontSize: 24,
-      designCanvasSize: canvasSize || undefined,
+      designCanvasSize: getCanvasSize(),
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -94,9 +99,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       setGifResults((data.results ?? []).map((g: any) => ({
         id: g.id,
         preview: g.media[0]?.tinygif?.url ?? g.media[0]?.gif?.url,
-        // Use actual .gif URL — img elements are far lighter than video decoders
-        // and bypass the MAX_VIDEOS cap so unlimited GIFs can show at once
-        url: g.media[0]?.gif?.url ?? g.media[0]?.mp4?.url,
+        // MP4: animates correctly on iOS/Android canvas; GIF ctx.drawImage only
+        // draws frame 1 on iOS Safari. Cap is removed in Box3D so no limit.
+        url: g.media[0]?.mp4?.url ?? g.media[0]?.gif?.url,
       })).filter((g: GifResult) => g.url));
     } catch {
       setGifResults([]);
@@ -110,7 +115,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       type: 'image',
       content: url,
       x: 50, y: 50, scale: 0.6, rotation: 0, color: '#ffffff', fontSize: 24,
-      designCanvasSize: canvasSize || undefined,
+      designCanvasSize: getCanvasSize(),
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -126,7 +131,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       type: 'image',
       content: url.trim(),
       x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
-      designCanvasSize: canvasSize || undefined,
+      designCanvasSize: getCanvasSize(),
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -192,7 +197,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         const el: GraphicElement = {
           id: uuidv4(), type: 'image', content: serverUrl,
           x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
-          designCanvasSize: canvasSize || undefined,
+          designCanvasSize: getCanvasSize(),
         };
         onUpdate([...side.elements, el]);
         setSelectedId(el.id);

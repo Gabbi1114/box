@@ -9,9 +9,10 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const RES = isIOS ? 512 : 1024;
 
-// iOS Safari hard-limits concurrent hardware video decoders to 4 — keep 1 spare
+// Track active video elements so we can clean them up on unmount.
+// No hard cap — short looping Tenor clips use efficient software decoders
+// on modern devices. The browser will fire onerror if it truly runs out.
 let _activeVideoCount = 0;
-const MAX_VIDEOS = isIOS ? 2 : 4;
 
 const isGifUrl   = (url: string) => /\.gif(\?|$)/i.test(url);
 const isVideoUrl = (url: string) =>
@@ -140,11 +141,6 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     let pending = toLoad.length;
     for (const el of toLoad) {
       if (isVideoUrl(el.content)) {
-        // Enforce decoder cap — skip if at limit
-        if (_activeVideoCount >= MAX_VIDEOS) {
-          if (--pending === 0) drawFn.current();
-          continue;
-        }
         _activeVideoCount++;
         const vid = document.createElement('video');
         vid.loop = true;
