@@ -156,7 +156,7 @@ export default function App() {
       isLoadingShare.current = false;
       setShareLoading(false);
       if (!data) return;
-      setConfig(data.config);
+      setConfig({ ...data.config, openLevel: 0 }); // always start closed
       setSides(data.sides);
       setShareId(id);
       setShareUrl(buildShareUrl(id));
