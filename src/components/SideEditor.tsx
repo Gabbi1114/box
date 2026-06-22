@@ -159,7 +159,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
    */
   const resizeForUpload = (file: File): Promise<File> =>
     new Promise(resolve => {
-      const MAX = 1600;
+      const MAX = 2048;
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
@@ -174,7 +174,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         ctx.drawImage(img, 0, 0, w, h);
         cv.toBlob(
           blob => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
-          'image/jpeg', 0.88,
+          'image/jpeg', 0.93,
         );
       };
       img.onerror = () => { URL.revokeObjectURL(url); resolve(file); }; // fallback: original

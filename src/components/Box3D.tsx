@@ -24,7 +24,7 @@ const isAnimated = (url: string) => isGifUrl(url) || isVideoUrl(url);
 // each running its own setInterval. Throttled to GIF_FPS to avoid hammering
 // the GPU with texture uploads on every frame.
 // ---------------------------------------------------------------------------
-const GIF_FPS   = isIOS ? 6 : 10;          // lower on iOS to save battery
+const GIF_FPS   = isIOS ? 6 : 8;           // lower on iOS to save battery
 const GIF_FRAME = 1000 / GIF_FPS;          // ms between texture uploads
 
 type DrawCallback = () => void;
@@ -57,39 +57,119 @@ function unregisterAnimDraw(fn: DrawCallback) {
 function useSideTexture(side: BoxSide, innerColor: string) {
   const { invalidate } = useThree();
 
-  const { canvas, ctx, texture } = useMemo(() => {
+  const { canvas, ctx, staticCanvas, staticCtx, texture } = useMemo(() => {
+    // Composite canvas — what gets uploaded to GPU as a texture
     const canvas = document.createElement('canvas');
     canvas.width = RES;
     canvas.height = RES;
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, RES, RES);
+
+    // Static cache canvas — holds background + text + stickers + static images.
+    // Redrawn only when those elements change, not on every animated frame.
+    const staticCanvas = document.createElement('canvas');
+    staticCanvas.width = RES;
+    staticCanvas.height = RES;
+    const staticCtx = staticCanvas.getContext('2d')!;
+    staticCtx.fillStyle = '#ffffff';
+    staticCtx.fillRect(0, 0, RES, RES);
+
     const texture = new THREE.CanvasTexture(canvas);
     texture.flipY = true;
     texture.channel = 0;
-    return { canvas, ctx, texture };
+    // Skip mipmap chain — saves GPU memory and avoids regeneration on every upload
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    return { canvas, ctx, staticCanvas, staticCtx, texture };
   }, []);
 
-  const media      = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>());
-  const gifImgs    = useRef<HTMLImageElement[]>([]);
-  const videoElems = useRef<HTMLVideoElement[]>([]);
-  const drawFn     = useRef<() => void>(() => {});
+  const media          = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>());
+  const gifImgs        = useRef<HTMLImageElement[]>([]);
+  const videoElems     = useRef<HTMLVideoElement[]>([]);
+  const drawFn         = useRef<() => void>(() => {});
+  const lastVideoTime  = useRef(new Map<string, number>());
   const registeredDraw = useRef<DrawCallback | null>(null);
 
   useEffect(() => {
+    // Force re-check of video frames on any element/color change so position/scale
+    // updates aren't silently skipped by the currentTime guard in drawFn.
+    lastVideoTime.current.clear();
+
+    const windowCanvasSize = Math.min(window.innerHeight * 0.55, window.innerWidth * 0.55);
+
+    // ── Build static cache: background + text + stickers + static images ──────
+    // Called once per element/color change, not on every animated frame tick.
+    const buildStaticLayer = () => {
+      staticCtx.imageSmoothingEnabled = true;
+      staticCtx.imageSmoothingQuality = 'high';
+      staticCtx.fillStyle = innerColor;
+      staticCtx.fillRect(0, 0, RES, RES);
+
+      for (const el of side.elements) {
+        if (el.type === 'image' && isAnimated(el.content)) continue; // animated: handled in drawFn
+
+        const dcs = el.designCanvasSize ?? windowCanvasSize;
+        const texScale = RES / dcs;
+
+        staticCtx.save();
+        staticCtx.translate((el.x / 100) * RES, (el.y / 100) * RES);
+        staticCtx.rotate((el.rotation * Math.PI) / 180);
+        staticCtx.scale(el.scale, el.scale);
+
+        if (el.type === 'text') {
+          staticCtx.font = `bold ${(el.fontSize ?? 24) * texScale}px sans-serif`;
+          staticCtx.fillStyle = el.color ?? '#ffffff';
+          staticCtx.textAlign = 'center';
+          staticCtx.textBaseline = 'middle';
+          staticCtx.shadowColor = 'rgba(0,0,0,0.5)';
+          staticCtx.shadowBlur = 4;
+          staticCtx.fillText(el.content, 0, 0);
+        } else if (el.type === 'image') {
+          const src = media.current.get(el.content);
+          if (src) {
+            const w = (src as HTMLImageElement).naturalWidth;
+            const h = (src as HTMLImageElement).naturalHeight;
+            if (w && h) {
+              const fitScale = Math.min(1, dcs / w, dcs / h);
+              const drawW = w * fitScale * texScale;
+              const drawH = h * fitScale * texScale;
+              staticCtx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
+            }
+          }
+        } else if (el.type === 'sticker') {
+          const emojiMap: Record<string, string> = { heart: '❤️', star: '⭐', sparkle: '✨', face: '😊' };
+          staticCtx.font = `${72 * texScale}px serif`;
+          staticCtx.textAlign = 'center';
+          staticCtx.textBaseline = 'middle';
+          staticCtx.fillText(emojiMap[el.content] ?? '❤️', 0, 0);
+        }
+        staticCtx.restore();
+      }
+    };
+
+    // ── Animated draw: copies static cache then overlays video/GIF frames ─────
+    // This is called by the RAF ticker on every animated tick — it is kept cheap
+    // by skipping the static elements (already in staticCanvas) and by guarding
+    // against uploading the same video frame twice.
     drawFn.current = () => {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-      ctx.fillStyle = innerColor;
-      ctx.fillRect(0, 0, RES, RES);
+      ctx.drawImage(staticCanvas, 0, 0); // fast copy — no text/sticker redraw needed
 
-      // Scale factor: editor canvas px → texture px.
-      // Use the designCanvasSize stamped on each element (exact size when it was placed)
-      // so text/images look identical regardless of which device the editor was on.
-      const windowCanvasSize = Math.min(window.innerHeight * 0.55, window.innerWidth * 0.55);
-
+      let dirty = false;
       for (const el of side.elements) {
-        // Per-element scale: use stored canvas size (phone/desktop aware), fall back to window
+        if (el.type !== 'image' || !isAnimated(el.content)) continue;
+        const src = media.current.get(el.content);
+        if (!src) continue;
+
+        if (isVideoUrl(el.content)) {
+          // Skip GPU upload if the video decoder hasn't produced a new frame yet
+          const vid = src as HTMLVideoElement;
+          const prev = lastVideoTime.current.get(el.content) ?? -1;
+          if (vid.currentTime === prev) continue;
+          lastVideoTime.current.set(el.content, vid.currentTime);
+        }
+
+        dirty = true;
         const dcs = el.designCanvasSize ?? windowCanvasSize;
         const texScale = RES / dcs;
 
@@ -98,44 +178,36 @@ function useSideTexture(side: BoxSide, innerColor: string) {
         ctx.rotate((el.rotation * Math.PI) / 180);
         ctx.scale(el.scale, el.scale);
 
-        if (el.type === 'text') {
-          ctx.font = `bold ${(el.fontSize ?? 24) * texScale}px sans-serif`;
-          ctx.fillStyle = el.color ?? '#ffffff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.shadowColor = 'rgba(0,0,0,0.5)';
-          ctx.shadowBlur = 4;
-          ctx.fillText(el.content, 0, 0);
-        } else if (el.type === 'image') {
-          const src = media.current.get(el.content);
-          if (src) {
-            const w = (src as HTMLVideoElement).videoWidth  || (src as HTMLImageElement).naturalWidth;
-            const h = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight;
-            if (w && h) {
-              // Mirror editor behaviour: scale down if larger than canvas, don't scale up small items
-              const fitScale = Math.min(1, dcs / w, dcs / h);
-              const drawW = w * fitScale * texScale;
-              const drawH = h * fitScale * texScale;
-              ctx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
-            }
-          }
-        } else if (el.type === 'sticker') {
-          const emojiMap: Record<string, string> = { heart: '❤️', star: '⭐', sparkle: '✨', face: '😊' };
-          ctx.font = `${72 * texScale}px serif`;  // 72px in editor → scaled to texture
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(emojiMap[el.content] ?? '❤️', 0, 0);
+        const w = (src as HTMLVideoElement).videoWidth  || (src as HTMLImageElement).naturalWidth;
+        const h = (src as HTMLVideoElement).videoHeight || (src as HTMLImageElement).naturalHeight;
+        if (w && h) {
+          const fitScale = Math.min(1, dcs / w, dcs / h);
+          const drawW = w * fitScale * texScale;
+          const drawH = h * fitScale * texScale;
+          ctx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
         }
         ctx.restore();
       }
-      texture.needsUpdate = true;
-      invalidate();
+
+      if (dirty) {
+        texture.needsUpdate = true;
+        invalidate();
+      }
     };
+
+    // Initial paint: build static layer, blit to composite, then composite any
+    // already-loaded animated elements on top in one shot.
+    buildStaticLayer();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(staticCanvas, 0, 0);
+    texture.needsUpdate = true;
+    invalidate();
+    drawFn.current(); // overlay any already-loaded videos/GIFs immediately
 
     const toLoad = side.elements.filter(
       el => el.type === 'image' && !media.current.has(el.content),
     );
-    drawFn.current();
     if (toLoad.length === 0) return;
 
     let pending = toLoad.length;
@@ -170,6 +242,15 @@ function useSideTexture(side: BoxSide, innerColor: string) {
         }
         img.onload = () => {
           media.current.set(el.content, img);
+          if (!isGifUrl(el.content)) {
+            // Static image: rebuild static layer and upload immediately for instant feedback
+            buildStaticLayer();
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(staticCanvas, 0, 0);
+            texture.needsUpdate = true;
+            invalidate();
+          }
           if (--pending === 0) drawFn.current();
         };
         img.onerror = () => { if (--pending === 0) drawFn.current(); };
@@ -528,9 +609,9 @@ export default function Box3D({
     <div className="w-full h-full">
       <Canvas
         frameloop="demand"
-        dpr={[1, isIOS ? 1 : 1.5]}
+        dpr={[1, isIOS ? 1 : 2]}
         performance={{ min: 0.5 }}
-        gl={{ antialias: !isIOS, powerPreference: 'low-power' }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <VisibilityGuard />
         <AutoRotateDriver active={autoRotate && !suspended} />
