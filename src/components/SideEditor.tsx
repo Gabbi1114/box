@@ -3,7 +3,7 @@ import { BoxSide, GraphicElement, BoxConfig } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { uploadMedia } from '../lib/shareSystem';
+import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
 
 interface SideEditorProps {
   side: BoxSide;
@@ -34,6 +34,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const [isResizing, setIsResizing] = useState(false);
   const [canvasSize, setCanvasSize] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Synchronous canvas-size read — avoids the async state-update race where
@@ -83,7 +84,14 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
 
   const removeElement = (id: string) => {
     const el = side.elements.find(e => e.id === id);
-    if (el?.content?.startsWith('blob:')) URL.revokeObjectURL(el.content);
+    if (el?.content?.startsWith('blob:')) {
+      URL.revokeObjectURL(el.content);
+    } else if (el?.content && shareId && isServerHostedUrl(el.content)) {
+      // Reclaim storage for uploaded photos/videos. Fire-and-forget — doesn't
+      // block the UI removal, and external URLs (e.g. Tenor GIFs) are already
+      // filtered out by isServerHostedUrl so this never touches media we don't own.
+      deleteMedia(shareId, el.content, el.bytes ?? 0);
+    }
     onUpdate(side.elements.filter(el => el.id !== id));
     setSelectedId(null);
   };
@@ -124,7 +132,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     setGifQuery('');
   };
 
-  const addVideo = (url: string) => {
+  const addVideo = (url: string, bytes?: number) => {
     if (!url.trim()) return;
     const el: GraphicElement = {
       id: uuidv4(),
@@ -132,6 +140,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       content: url.trim(),
       x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
       designCanvasSize: getCanvasSize(),
+      bytes,
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -142,11 +151,16 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const handleVideoFile = async (file: File) => {
     setShowVideoInput(false);
     setUploading(true);
+    setUploadError(null);
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
-      const serverUrl = await uploadMedia(effectiveShareId, file);
+      const result = await uploadMedia(effectiveShareId, file);
       setUploading(false);
-      if (serverUrl) { addVideo(serverUrl); return; }
+      if (result.ok) { addVideo(result.url, result.bytes); return; }
+      if ('limitReached' in result && result.limitReached) {
+        setUploadError('Storage limit reached for this box — remove a photo or video to add more.');
+        return;
+      }
     }
     setUploading(false);
     // Fallback: local blob (won't survive share reload, but works for current session)
@@ -187,20 +201,26 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
    */
   const handleImageFile = async (file: File) => {
     setUploading(true);
+    setUploadError(null);
     // Resolve or lazily create a share ID so the photo goes to the server/CDN
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
-      const toUpload  = await resizeForUpload(file);          // resize first → much faster upload + server
-      const serverUrl = await uploadMedia(effectiveShareId, toUpload);
+      const toUpload = await resizeForUpload(file);          // resize first → much faster upload + server
+      const result   = await uploadMedia(effectiveShareId, toUpload);
       setUploading(false);
-      if (serverUrl) {
+      if (result.ok) {
         const el: GraphicElement = {
-          id: uuidv4(), type: 'image', content: serverUrl,
+          id: uuidv4(), type: 'image', content: result.url,
           x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
           designCanvasSize: getCanvasSize(),
+          bytes: result.bytes,
         };
         onUpdate([...side.elements, el]);
         setSelectedId(el.id);
+        return;
+      }
+      if ('limitReached' in result && result.limitReached) {
+        setUploadError('Storage limit reached for this box — remove a photo or video to add more.');
         return;
       }
     }
@@ -290,6 +310,23 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           <Check className="w-3.5 h-3.5" /> Done
         </button>
       </div>
+
+      {/* Upload error (e.g. storage cap reached) */}
+      <AnimatePresence>
+        {uploadError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="absolute top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-red-500/15 border border-red-500/30 text-red-300 text-xs px-4 py-2.5 rounded-full max-w-md text-center"
+          >
+            <span>{uploadError}</span>
+            <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-red-200 shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* GIF Search Overlay */}
       <AnimatePresence>

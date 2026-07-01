@@ -10,7 +10,7 @@ import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,6 +20,9 @@ const DATA_DIR  = path.join(ROOT, 'share-data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
 const PORT      = Number(process.env.PORT ?? process.env.SHARE_PORT ?? 3001);
 const MAX_EDIT_DAYS = Number(process.env.SHARE_MAX_EDIT_DAYS ?? 5);
+// Cumulative uploaded-media cap per share, enforced in upload-media below.
+// Keeps per-share storage cost bounded regardless of how many people use the app.
+const MEDIA_BYTES_LIMIT = Number(process.env.SHARE_MEDIA_BYTES_LIMIT ?? 10 * 1024 * 1024);
 
 fs.mkdirSync(DATA_DIR,  { recursive: true });
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
@@ -71,6 +74,15 @@ async function storeMedia(shareId, slug, body, contentType) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, slug), body);
   return `${serverBase()}/api/media/${shareId}/${slug}`;
+}
+
+// Deletes one uploaded media object (mirrors storeMedia's key scheme: `${shareId}/${slug}`).
+async function deleteMediaObject(shareId, slug) {
+  if (r2) {
+    await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: `${shareId}/${slug}` })).catch(() => {});
+    return;
+  }
+  try { fs.unlinkSync(path.join(MEDIA_DIR, shareId, slug)); } catch {}
 }
 
 // ---------------------------------------------------------------------------
@@ -272,7 +284,7 @@ const CORS_ORIGIN = (process.env.CORS_ORIGIN ?? '*').replace(/\/$/, '');
 
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -296,17 +308,22 @@ app.post('/api/share', express.json({ limit: '5mb' }), async (req, res) => {
     return res.status(400).json({ error: 'config and sides are required' });
   }
 
-  const id        = crypto.randomBytes(12).toString('base64url');
-  const editUntil = new Date(Date.now() + MAX_EDIT_DAYS * 864e5).toISOString();
+  const id = crypto.randomBytes(12).toString('base64url');
 
   await writeShare(id, {
     v: 1, config, sides,
-    editUntil,
+    // Deferred: the edit window shouldn't start counting down before anyone
+    // has actually opened the link. GET /api/share/:id sets the real
+    // timestamp on first load. Until then editWindowOpen() treats null as open.
+    editUntil: null,
+    editDays: MAX_EDIT_DAYS,
+    finalized: false,
+    mediaBytes: 0,
     createdAt: new Date().toISOString(),
   });
 
   console.log(`[share] created  ${id}`);
-  res.json({ id, editUntil });
+  res.json({ id, editUntil: null, bytesLimit: MEDIA_BYTES_LIMIT });
 });
 
 // ---------------------------------------------------------------------------
@@ -315,7 +332,15 @@ app.post('/api/share', express.json({ limit: '5mb' }), async (req, res) => {
 app.get('/api/share/:id', async (req, res) => {
   const data = await readShare(req.params.id);
   if (!data) return res.status(404).json({ error: 'not found' });
-  res.json(data);
+
+  // First view starts the edit-window countdown, not creation time — so a
+  // creator who hasn't shared the link yet isn't burning down their own window.
+  if (data.editUntil == null && data.editDays != null) {
+    data.editUntil = new Date(Date.now() + data.editDays * 864e5).toISOString();
+    await writeShare(req.params.id, data);
+  }
+
+  res.json({ ...data, bytesLimit: MEDIA_BYTES_LIMIT });
 });
 
 // ---------------------------------------------------------------------------
@@ -324,6 +349,7 @@ app.get('/api/share/:id', async (req, res) => {
 app.put('/api/share/:id', express.json({ limit: '5mb' }), async (req, res) => {
   const data = await readShare(req.params.id);
   if (!data)                 return res.status(404).json({ error: 'not found' });
+  if (data.finalized)        return res.status(403).json({ error: 'finalized' });
   if (!editWindowOpen(data)) return res.status(403).json({ error: 'edit window expired' });
 
   const { config, sides } = req.body ?? {};
@@ -341,8 +367,24 @@ app.post(
   '/api/share/:id/upload-media',
   express.raw({ type: '*/*', limit: '100mb' }),
   async (req, res) => {
-    if (!await readShare(req.params.id)) {
+    const shareData = await readShare(req.params.id);
+    if (!shareData) {
       return res.status(404).json({ error: 'share not found' });
+    }
+    if (shareData.finalized) {
+      return res.status(403).json({ error: 'finalized' });
+    }
+
+    // Reject before spending ffmpeg/sharp work on an upload that won't fit —
+    // conservative pre-check using the raw upload size (converted output is
+    // typically smaller, never larger, so this can't under-reject).
+    const currentBytes = shareData.mediaBytes ?? 0;
+    if (currentBytes + req.body.length > MEDIA_BYTES_LIMIT) {
+      return res.status(413).json({
+        error: 'storage limit reached',
+        mediaBytes: currentBytes,
+        bytesLimit: MEDIA_BYTES_LIMIT,
+      });
     }
 
     const mime    = (req.headers['content-type'] ?? '').split(';')[0].trim()
@@ -360,10 +402,52 @@ app.post(
     const slug = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
     const url  = await storeMedia(safeId(req.params.id), slug, body, contentType);
 
-    console.log(`[share] media    ${url}  (${contentType}, ${body.length} bytes)`);
-    res.json({ url, contentType });
+    const mediaBytes = currentBytes + body.length;
+    await writeShare(req.params.id, { ...shareData, mediaBytes });
+
+    console.log(`[share] media    ${url}  (${contentType}, ${body.length} bytes, share total ${mediaBytes})`);
+    res.json({ url, contentType, bytes: body.length, mediaBytes, bytesLimit: MEDIA_BYTES_LIMIT });
   }
 );
+
+// ---------------------------------------------------------------------------
+// POST /api/share/:id/finalize — lock a share permanently (server-enforced)
+// ---------------------------------------------------------------------------
+app.post('/api/share/:id/finalize', async (req, res) => {
+  const data = await readShare(req.params.id);
+  if (!data) return res.status(404).json({ error: 'not found' });
+
+  await writeShare(req.params.id, { ...data, finalized: true });
+  console.log(`[share] finalized ${req.params.id}`);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/share/:id/media — remove one uploaded file, reclaim its bytes
+// Body: { key, bytes } — key must belong to this share (prevents cross-share
+// deletion); only called for our own R2/local URLs, never external CDN URLs
+// (e.g. Tenor-sourced GIFs, which cost nothing and aren't ours to delete).
+// ---------------------------------------------------------------------------
+app.delete('/api/share/:id/media', express.json({ limit: '1mb' }), async (req, res) => {
+  const shareId = safeId(req.params.id);
+  const data = await readShare(shareId);
+  if (!data) return res.status(404).json({ error: 'not found' });
+  if (data.finalized) return res.status(403).json({ error: 'finalized' });
+
+  const { key, bytes } = req.body ?? {};
+  if (typeof key !== 'string' || !key.startsWith(`${shareId}/`)) {
+    return res.status(400).json({ error: 'invalid key' });
+  }
+
+  const slug = key.slice(shareId.length + 1);
+  await deleteMediaObject(shareId, slug);
+
+  const mediaBytes = Math.max(0, (data.mediaBytes ?? 0) - (Number(bytes) || 0));
+  await writeShare(shareId, { ...data, mediaBytes });
+
+  console.log(`[share] media deleted ${key} (share total ${mediaBytes})`);
+  res.json({ ok: true, mediaBytes });
+});
 
 // ---------------------------------------------------------------------------
 // GET /api/r2/:shareId/:file — proxy R2 media through server (adds CORS headers)

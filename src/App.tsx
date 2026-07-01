@@ -14,7 +14,7 @@ import {
   Layers, Settings, ChevronLeft, ChevronRight, Share2, Box as BoxIcon,
   Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw, Lock,
 } from 'lucide-react';
-import { createShare, updateShare, loadShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
+import { createShare, updateShare, loadShare, finalizeShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
 import LoadingScreen from './components/LoadingScreen.tsx';
 
 const EDITOR_PASSWORD = import.meta.env.VITE_STUDIO_PASSWORD as string | undefined;
@@ -85,7 +85,12 @@ const DEFAULT_CONFIG: BoxConfig = {
 export default function App() {
   const isShareLink = !!getShareId();
   const needsPassword = !!EDITOR_PASSWORD && !isShareLink;
-  const [unlocked, setUnlocked] = useState(() => !needsPassword);
+  // sessionStorage (not localStorage) so it survives a page refresh within the
+  // tab but still re-prompts in a fresh tab/window — matches typical "stay
+  // unlocked for this session" expectations without persisting forever.
+  const [unlocked, setUnlocked] = useState(
+    () => !needsPassword || sessionStorage.getItem('studioUnlocked') === '1'
+  );
 
   // Loading screen — shown until 3D first frame fires AND min time passes
   const [sceneReady, setSceneReady]   = useState(false);
@@ -113,9 +118,12 @@ export default function App() {
 
   // View-only mode (set when loading from ?share= URL, or after clicking "Done Editing")
   const [isViewOnly, setIsViewOnly]   = useState(false);
-  // Once the user confirms "Done Editing", editing is permanently locked for this session
+  // Server-enforced permanent lock (POST /api/share/:id/finalize) — true for
+  // every device that opens the link, not just the one that clicked "Finish".
   const [editingLocked, setEditingLocked] = useState(false);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+  // Edit-window countdown — null until a loaded share reports its editUntil.
+  const [editUntil, setEditUntil] = useState<string | null>(null);
 
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingShare = useRef(false);
@@ -161,8 +169,11 @@ export default function App() {
       setShareId(id);
       setShareUrl(buildShareUrl(id));
       setIsViewOnly(true);
-      // Restore permanent lock from localStorage (survives page refresh)
-      if (localStorage.getItem(`editingLocked_${id}`) === '1') {
+      setEditUntil(data.editUntil);
+      // Server-verified lock — true for every visitor once anyone finalizes,
+      // not just the browser that clicked it. localStorage is a legacy/instant
+      // fallback for a browser that finalized before this field existed.
+      if (data.finalized || localStorage.getItem(`editingLocked_${id}`) === '1') {
         setEditingLocked(true);
       }
     });
@@ -172,6 +183,44 @@ export default function App() {
       isLoadingShare.current = false;
     };
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Edit-window countdown — self-adjusting tick: 1/min while >1h left,
+  // 1/sec once under 1h (so the display is smooth when it matters, without
+  // re-rendering every second for a window that might last days).
+  // ---------------------------------------------------------------------------
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!editUntil || editingLocked) return;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setCountdownNow(Date.now());
+      const remaining = new Date(editUntil).getTime() - Date.now();
+      if (remaining <= 0) return; // window closed — stop ticking
+      timeoutId = setTimeout(tick, remaining < 3600_000 ? 1000 : 60_000);
+    };
+    tick();
+    return () => clearTimeout(timeoutId);
+  }, [editUntil, editingLocked]);
+
+  const countdown = useMemo(() => {
+    if (!editUntil || editingLocked) return null;
+    const remainingMs = new Date(editUntil).getTime() - countdownNow;
+    if (remainingMs <= 0) return null;
+    const totalSec = Math.floor(remainingMs / 1000);
+    const urgent = remainingMs < 3600_000;
+    let text: string;
+    if (!urgent) {
+      const days  = Math.floor(totalSec / 86400);
+      const hours = Math.floor((totalSec % 86400) / 3600);
+      const mins  = Math.floor((totalSec % 3600) / 60);
+      text = `${days}d ${hours}h ${mins}m`;
+    } else {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      text = `${pad(Math.floor(totalSec / 3600))}:${pad(Math.floor((totalSec % 3600) / 60))}:${pad(totalSec % 60)}`;
+    }
+    return { text, urgent };
+  }, [editUntil, editingLocked, countdownNow]);
 
   // ---------------------------------------------------------------------------
   // Auto-save: push updates 2 s after last change (edit mode only)
@@ -297,7 +346,7 @@ export default function App() {
             transition={{ duration: 0.4 }}
             className="absolute inset-0 z-[500]"
           >
-            <PasswordGate onUnlock={() => setUnlocked(true)} />
+            <PasswordGate onUnlock={() => { sessionStorage.setItem('studioUnlocked', '1'); setUnlocked(true); }} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -349,6 +398,20 @@ export default function App() {
               <Eye className="w-4 h-4" />
               <span>Preview</span>
             </motion.button>
+
+            {/* Edit-window countdown — only meaningful once a share is loaded */}
+            {countdown && (
+              <span
+                className={`px-3 py-2 rounded-full text-xs font-mono safe-blur border ${
+                  countdown.urgent
+                    ? 'bg-red-500/15 border-red-500/30 text-red-300'
+                    : 'bg-white/10 border-white/10 text-neutral-300'
+                }`}
+                title="Time left to edit this box before it locks automatically"
+              >
+                {countdown.text}
+              </span>
+            )}
 
             {/* End Editing — permanent lock, only on shared links */}
             {shareId && (
@@ -486,7 +549,10 @@ export default function App() {
                     setShowFinishConfirm(false);
                     setEditingLocked(true);
                     setIsViewOnly(true);
-                    if (shareId) localStorage.setItem(`editingLocked_${shareId}`, '1');
+                    if (shareId) {
+                      localStorage.setItem(`editingLocked_${shareId}`, '1');
+                      finalizeShare(shareId); // server-enforced — locks it for every visitor, not just this browser
+                    }
                   }}
                   className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-pink-600 hover:bg-pink-500 text-white transition-all"
                 >

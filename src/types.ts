@@ -11,6 +11,10 @@ export interface GraphicElement {
   /** Actual editor canvas size (px) when element was placed — used for consistent
    *  texture scaling across devices with different screen sizes. */
   designCanvasSize?: number;
+  /** Stored byte size of a server-uploaded image/video, for accurate mediaBytes
+   *  accounting on delete. Absent for text/sticker elements and external URLs
+   *  (e.g. Tenor GIFs) that were never uploaded to our own storage. */
+  bytes?: number;
 }
 
 export interface BoxSide {
