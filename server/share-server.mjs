@@ -1,6 +1,6 @@
 /**
  * Explosion Box Studio — Share Server
- * Port 3001 | Handles share persistence + image → AVIF conversion + R2 upload
+ * Port 3001 | Handles share persistence + image → WebP / GIF → MP4 conversion + R2 upload
  */
 import express from 'express';
 import fs from 'fs';
@@ -79,7 +79,7 @@ async function storeMedia(shareId, slug, body, contentType) {
 let sharp = null;
 try {
   sharp = (await import('sharp')).default;
-  console.log('[share] ✓ sharp loaded — AVIF conversion enabled');
+  console.log('[share] ✓ sharp loaded — WebP conversion enabled');
 } catch {
   console.warn('[share] ✗ sharp not found — images stored as-is');
 }
@@ -186,6 +186,46 @@ async function transcodeVideo(buf, mime) {
   }
 }
 
+// GIFs have no inter-frame compression — a typical animated GIF is 5-20x
+// larger than an equivalent H.264 MP4 and is decoded in software by the
+// browser's image decoder rather than the hardware video decoder. Transcoding
+// server-side turns every upload into the cheap <video> path instead.
+async function transcodeGif(buf) {
+  if (!ffmpegBin) {
+    return { body: buf, contentType: 'image/gif', ext: '.gif' };
+  }
+
+  const tmpIn  = path.join(os.tmpdir(), `box-gin-${Date.now()}.gif`);
+  const tmpOut = path.join(os.tmpdir(), `box-gout-${Date.now()}.mp4`);
+
+  try {
+    fs.writeFileSync(tmpIn, buf);
+
+    await execFileAsync(ffmpegBin, [
+      '-i', tmpIn,
+      // libx264 + yuv420p requires even width/height >= 2
+      '-vf', "scale='max(2,trunc(iw/2)*2)':'max(2,trunc(ih/2)*2)'",
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '28',
+      '-pix_fmt', 'yuv420p',
+      '-an',
+      '-movflags', '+faststart',
+      '-y', tmpOut,
+    ], { timeout: 90_000 });
+
+    const body = fs.readFileSync(tmpOut);
+    console.log(`[share] gif      transcode OK  ${(buf.length / 1e6).toFixed(1)}MB → ${(body.length / 1e6).toFixed(1)}MB`);
+    return { body, contentType: 'video/mp4', ext: '.mp4' };
+  } catch (e) {
+    console.warn('[share] GIF transcode failed, storing original:', e.message?.slice(0, 120));
+    return { body: buf, contentType: 'image/gif', ext: '.gif' };
+  } finally {
+    try { fs.unlinkSync(tmpIn);  } catch {}
+    try { fs.unlinkSync(tmpOut); } catch {}
+  }
+}
+
 // ---------------------------------------------------------------------------
 // MIME / extension maps
 // ---------------------------------------------------------------------------
@@ -200,7 +240,7 @@ const MIME_BY_EXT = Object.fromEntries(
 );
 
 async function convertImage(buf, mime, hd = false) {
-  if (mime === 'image/gif' || !sharp) {
+  if (!sharp) {
     return { body: buf, contentType: mime, ext: EXT_BY_MIME[mime] ?? '.bin' };
   }
   try {
@@ -295,7 +335,7 @@ app.put('/api/share/:id', express.json({ limit: '5mb' }), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/share/:id/upload-media — convert image → AVIF / video → WebM, store to R2
+// POST /api/share/:id/upload-media — convert image → WebP / video+GIF → MP4, store to R2
 // ---------------------------------------------------------------------------
 app.post(
   '/api/share/:id/upload-media',
@@ -309,9 +349,12 @@ app.post(
                     || 'application/octet-stream';
     const hd      = req.query.hd === '1';
     const isVideo = mime.startsWith('video/');
+    const isGif   = mime === 'image/gif';
 
     const { body, contentType, ext } = isVideo
       ? await transcodeVideo(req.body, mime)
+      : isGif
+      ? await transcodeGif(req.body)
       : await convertImage(req.body, mime, hd);
 
     const slug = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
@@ -365,7 +408,9 @@ app.get('/api/media/:shareId/:file', (req, res) => {
   res.setHeader('Content-Type', MIME_BY_EXT[ext] ?? 'application/octet-stream');
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   res.setHeader('Accept-Ranges', 'bytes');
-  res.sendFile(filePath, { root: '/' });
+  // filePath is already absolute — passing root:'/' here doubled the drive
+  // letter on Windows (C:\C:\Users\...), 404-ing every locally-served file.
+  res.sendFile(filePath);
 });
 
 // ---------------------------------------------------------------------------
