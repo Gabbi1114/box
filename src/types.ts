@@ -24,6 +24,8 @@ export interface BoxSide {
   elements: GraphicElement[];
 }
 
+export type FloatingShape = 'heart' | 'cake' | 'rose';
+
 export interface BoxConfig {
   numLayers: number;
   numSides: number;
@@ -31,6 +33,9 @@ export interface BoxConfig {
   innerColor: string; // all inner surfaces (canvas bg, lid underside, base floor)
   size: number;
   openLevel: number;
+  /** Decorative shape that floats up once the box is fully exploded. Defaults
+   *  to 'heart' when absent so existing saved boxes render unchanged. */
+  floatingShape?: FloatingShape;
 }
 
 export type AppMode = 'BOX_EDIT' | 'SIDE_EDIT';

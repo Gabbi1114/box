@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { BoxConfig } from '../types';
-import { Layers, Maximize, Box as BoxIcon, Play, ChevronRight, ChevronLeft, RotateCcw } from 'lucide-react';
+import { BoxConfig, FloatingShape } from '../types';
+import {
+  Layers, Maximize, Box as BoxIcon, Play, ChevronRight, ChevronLeft, RotateCcw,
+  Heart, Cake, Rose,
+} from 'lucide-react';
 
 interface BoxEditorProps {
   config: BoxConfig;
@@ -18,6 +21,12 @@ type ColorTarget = 'baseColor' | 'innerColor';
 const COLOR_PARTS: { key: ColorTarget; label: string }[] = [
   { key: 'baseColor',  label: 'Out' },
   { key: 'innerColor', label: 'In'  },
+];
+
+const FLOATING_SHAPES: { key: FloatingShape; Icon: typeof Heart; title: string }[] = [
+  { key: 'heart', Icon: Heart, title: 'Heart' },
+  { key: 'cake',  Icon: Cake,  title: 'Birthday cake' },
+  { key: 'rose',  Icon: Rose,  title: 'Rose bouquet' },
 ];
 
 export default function BoxEditor({ config, setConfig, onToggleOpen, onPrevStep }: BoxEditorProps) {
@@ -138,6 +147,24 @@ export default function BoxEditor({ config, setConfig, onToggleOpen, onPrevStep 
             }`}
             style={{ backgroundColor: color }}
           />
+        ))}
+      </div>
+
+      {/* Floating shape picker pill */}
+      <div className="flex items-center gap-1 bg-black/70 backdrop-blur-xl rounded-full px-2 py-2 border border-white/[0.07]">
+        {FLOATING_SHAPES.map(({ key, Icon, title }) => (
+          <button
+            key={key}
+            onClick={() => update('floatingShape', key)}
+            title={title}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-90 ${
+              (config.floatingShape ?? 'heart') === key
+                ? 'bg-pink-600 text-white'
+                : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/10'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+          </button>
         ))}
       </div>
     </div>

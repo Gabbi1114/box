@@ -1,8 +1,18 @@
-import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useMemo, useState, useEffect, useCallback, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, ContactShadows, Edges } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, ContactShadows, Edges, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { BoxConfig, BoxSide } from '../types';
+
+// Draco decoder hosted locally (public/draco/) rather than drei's default CDN
+// path — avoids a third-party dependency at runtime for a feature this core.
+const DRACO_PATH = '/draco/';
+const CAKE_MODEL_URL = '/models/birthday_cake.glb';
+const ROSE_MODEL_URL = '/models/flower_bouquet.glb';
+const HEART_MODEL_URL = '/models/heart_with_arrow.glb';
+useGLTF.preload(CAKE_MODEL_URL, DRACO_PATH);
+useGLTF.preload(ROSE_MODEL_URL, DRACO_PATH);
+useGLTF.preload(HEART_MODEL_URL, DRACO_PATH);
 
 // iOS Safari has a ~150 MB WebGL texture limit; 512px textures use 1 MB each vs 4 MB at 1024px
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -472,52 +482,71 @@ function Lid({ config }: { config: BoxConfig }) {
 }
 
 // ---------------------------------------------------------------------------
-// Floating heart
+// Floating shape — a decorative object that pops up once the box is fully
+// exploded. Several selectable variants share the same bob/spin/scale-in
+// animation; only the geometry composition below the outer group differs.
 // ---------------------------------------------------------------------------
-function FloatingHeart({ config }: { config: BoxConfig }) {
-  const { invalidate } = useThree();
-  const heartRef = useRef<THREE.Group>(null);
-  const { openLevel, numLayers } = config;
+// Draco-compressed GLB models (see public/models/). Licenses:
+// "Birthday Cake" by 3DMish (CC-BY-4.0, credit required) and "Flower Bouquet"
+// by icecool (CC-BY-4.0, credit required), both via Sketchfab — "Heart with
+// Arrow" by minimoku (Sketchfab Standard license, no attribution required).
+function CakeModel() {
+  const { scene } = useGLTF(CAKE_MODEL_URL, DRACO_PATH);
+  return <primitive object={scene} scale={6.5} position={[0, -0.9, 0]} />;
+}
 
-  const heartShape = useMemo(() => {
-    const s = new THREE.Shape();
-    const x = 0, y = 0;
-    s.moveTo(x + 0.5, y + 0.5);
-    s.bezierCurveTo(x + 0.5, y + 0.5, x + 0.4, y, x, y);
-    s.bezierCurveTo(x - 0.6, y, x - 0.6, y + 0.7, x - 0.6, y + 0.7);
-    s.bezierCurveTo(x - 0.6, y + 1.1, x - 0.3, y + 1.54, x + 0.5, y + 1.9);
-    s.bezierCurveTo(x + 1.2, y + 1.54, x + 1.6, y + 1.1, x + 1.6, y + 0.7);
-    s.bezierCurveTo(x + 1.6, y + 0.7, x + 1.6, y, x + 1, y);
-    s.bezierCurveTo(x + 0.7, y, x + 0.5, y + 0.5, x + 0.5, y + 0.5);
-    return s;
-  }, []);
+function RoseModel() {
+  const { scene } = useGLTF(ROSE_MODEL_URL, DRACO_PATH);
+  return <primitive object={scene} scale={5.5} position={[0, -0.95, 0]} />;
+}
+
+function HeartModel() {
+  const { scene } = useGLTF(HEART_MODEL_URL, DRACO_PATH);
+  return <primitive object={scene} scale={0.85} position={[0, -0.05, 0]} />;
+}
+
+function FloatingShape({ config }: { config: BoxConfig }) {
+  const { invalidate } = useThree();
+  const shapeRef = useRef<THREE.Group>(null);
+  const { openLevel, numLayers, floatingShape = 'heart' } = config;
 
   useFrame((state) => {
-    if (!heartRef.current) return;
+    if (!shapeRef.current) return;
     const visible = openLevel > numLayers;
     const targetScale = visible ? 0.5 : 0;
-    const s = THREE.MathUtils.lerp(heartRef.current.scale.x, targetScale, 0.1);
-    heartRef.current.scale.set(s, s, s);
+    const s = THREE.MathUtils.lerp(shapeRef.current.scale.x, targetScale, 0.1);
+    shapeRef.current.scale.set(s, s, s);
 
-    if (visible || heartRef.current.scale.x > 0.01) {
+    if (visible || shapeRef.current.scale.x > 0.01) {
       const t = state.clock.getElapsedTime();
       const basePos = -config.size / 2 + config.numLayers * 0.1;
-      heartRef.current.position.y = THREE.MathUtils.lerp(
-        heartRef.current.position.y, basePos + 0.8 + Math.sin(t * 2) * 0.1, 0.05,
+      shapeRef.current.position.y = THREE.MathUtils.lerp(
+        shapeRef.current.position.y, basePos + 0.8 + Math.sin(t * 2) * 0.1, 0.05,
       );
-      heartRef.current.rotation.y = t * 1.2;
+      shapeRef.current.rotation.y = t * 1.2;
       invalidate();
     }
   });
 
   return (
-    <group ref={heartRef} rotation={[Math.PI, 0, 0]} scale={[0, 0, 0]}>
-      <mesh position={[-0.5, -1, 0]}>
-        <extrudeGeometry
-          args={[heartShape, { depth: 0.4, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.08, bevelThickness: 0.08 }]}
-        />
-        <meshStandardMaterial color="#ff2d55" roughness={0.3} metalness={0.5} />
-      </mesh>
+    <group ref={shapeRef} scale={[0, 0, 0]}>
+      {floatingShape === 'heart' && (
+        <Suspense fallback={null}>
+          <HeartModel />
+        </Suspense>
+      )}
+
+      {floatingShape === 'cake' && (
+        <Suspense fallback={null}>
+          <CakeModel />
+        </Suspense>
+      )}
+
+      {floatingShape === 'rose' && (
+        <Suspense fallback={null}>
+          <RoseModel />
+        </Suspense>
+      )}
     </group>
   );
 }
@@ -631,7 +660,7 @@ export default function Box3D({
 
         <group>
           <Lid config={config} />
-          <FloatingHeart config={config} />
+          <FloatingShape config={config} />
           {layersArray.map(l => {
             const baseSide = sides.find(s => s.layer === l && s.index === -1);
             if (!baseSide) return null;
