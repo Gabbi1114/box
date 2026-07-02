@@ -255,24 +255,25 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   return (
     <div className="w-full h-full relative flex items-center justify-center overflow-hidden bg-neutral-950">
 
-      {/* Floating top toolbar */}
-      <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-black/80 backdrop-blur-xl rounded-full px-3 py-2 border border-white/[0.07]">
+      {/* Floating top toolbar — icon-only + tighter spacing below sm, and
+          allowed to wrap onto a second line rather than overflow off-screen */}
+      <div className="absolute top-2 sm:top-5 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center justify-center gap-1 bg-black/80 backdrop-blur-xl rounded-2xl sm:rounded-full px-2 sm:px-3 py-1.5 sm:py-2 border border-white/[0.07] max-w-[calc(100vw-1rem)]">
         <button
           onClick={() => addElement('text')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Type className="w-3.5 h-3.5" /> Text
+          <Type className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Text</span>
         </button>
-        <div className="w-px h-4 bg-white/10" />
+        <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
           onClick={() => photoFileRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
         >
           {uploading
             ? <Loader className="w-3.5 h-3.5 animate-spin" />
             : <ImageIcon className="w-3.5 h-3.5" />}
-          {uploading ? 'Converting…' : 'Photo'}
+          <span className="hidden sm:inline">{uploading ? 'Converting…' : 'Photo'}</span>
         </button>
         <input
           ref={photoFileRef}
@@ -281,33 +282,33 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f); e.target.value = ''; }}
         />
-        <div className="w-px h-4 bg-white/10" />
+        <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
           onClick={() => { setShowGifSearch(true); setGifResults([]); setGifQuery(''); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Film className="w-3.5 h-3.5" /> GIF
+          <Film className="w-3.5 h-3.5" /> <span className="hidden sm:inline">GIF</span>
         </button>
-        <div className="w-px h-4 bg-white/10" />
+        <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
           onClick={() => { setShowVideoInput(true); setVideoUrl(''); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Video className="w-3.5 h-3.5" /> Video
+          <Video className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Video</span>
         </button>
-        <div className="w-px h-4 bg-white/10" />
+        <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
           onClick={() => addElement('sticker')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Sparkles className="w-3.5 h-3.5" /> Sticker
+          <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Sticker</span>
         </button>
-        <div className="w-px h-4 bg-white/10 mx-1" />
+        <div className="hidden sm:block w-px h-4 bg-white/10 mx-1" />
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 px-4 py-1.5 bg-white text-black text-xs font-bold rounded-full hover:scale-105 active:scale-95 transition-all"
+          className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 bg-white text-black text-xs font-bold rounded-full hover:scale-105 active:scale-95 transition-all"
         >
-          <Check className="w-3.5 h-3.5" /> Done
+          <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Done</span>
         </button>
       </div>
 

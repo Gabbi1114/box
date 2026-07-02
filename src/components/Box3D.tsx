@@ -604,6 +604,38 @@ function VisibilityGuard() {
 }
 
 // ---------------------------------------------------------------------------
+// Recovers from a lost WebGL context (GPU driver reset, laptop switching
+// between integrated/discrete graphics, tab backgrounded too long, etc).
+// Without calling preventDefault() on the loss event, the browser considers
+// the context permanently dead and never fires 'webglcontextrestored' — the
+// canvas just stays black/frozen forever, and R3F hooks that fire afterward
+// throw "Hooks can only be used within the Canvas component" because the
+// underlying GL store is gone. This has nothing to do with what triggered
+// the loss; every WebGL app needs this handler.
+// ---------------------------------------------------------------------------
+function ContextLossGuard() {
+  const { gl, invalidate } = useThree();
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const onLost = (event: Event) => {
+      event.preventDefault();
+      console.warn('[Box3D] WebGL context lost — waiting for restore.');
+    };
+    const onRestored = () => {
+      console.warn('[Box3D] WebGL context restored.');
+      invalidate();
+    };
+    canvas.addEventListener('webglcontextlost', onLost, false);
+    canvas.addEventListener('webglcontextrestored', onRestored, false);
+    return () => {
+      canvas.removeEventListener('webglcontextlost', onLost);
+      canvas.removeEventListener('webglcontextrestored', onRestored);
+    };
+  }, [gl, invalidate]);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Signals parent when the first frame has been rendered
 // ---------------------------------------------------------------------------
 function FirstFrameReady({ onReady }: { onReady: () => void }) {
@@ -643,6 +675,7 @@ export default function Box3D({
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <VisibilityGuard />
+        <ContextLossGuard />
         <AutoRotateDriver active={autoRotate && !suspended} />
         {onReady && <FirstFrameReady onReady={onReady} />}
         <PerspectiveCamera makeDefault position={[7, 7, 7]} fov={45} />
