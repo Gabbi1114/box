@@ -11,8 +11,8 @@ import BoxEditor from './components/BoxEditor.tsx';
 import SideEditor from './components/SideEditor.tsx';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Layers, Settings, ChevronLeft, ChevronRight, Share2, Box as BoxIcon,
-  Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw, Lock,
+  Layers, Settings, ChevronLeft, ChevronRight, Share2,
+  Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw,
 } from 'lucide-react';
 import { createShare, updateShare, loadShare, finalizeShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
 import LoadingScreen from './components/LoadingScreen.tsx';
@@ -34,19 +34,19 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   };
 
   return (
-    <div className="relative w-full h-screen bg-neutral-950 flex items-center justify-center font-sans">
+    <div className="relative w-full h-screen bg-slate-900 flex items-center justify-center font-sans overflow-hidden">
+      {/* Subtle radial glow, matching the reference lock screen */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ backgroundImage: 'radial-gradient(circle at 50% 40%, rgba(139,92,246,0.35), rgba(15,23,42,0) 60%)' }}
+      />
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-80 flex flex-col items-center gap-6"
+        className="relative w-80 flex flex-col items-center gap-6"
       >
-        <div className="w-14 h-14 bg-gradient-to-br from-pink-500 to-violet-500 rounded-2xl flex items-center justify-center shadow-lg shadow-pink-500/20">
-          <Lock className="w-7 h-7 text-white" />
-        </div>
-        <div className="text-center">
-          <h1 className="text-xl font-bold text-white tracking-tight">Explosion Box Studio</h1>
-          <p className="text-xs text-neutral-500 mt-1">Enter password to continue</p>
-        </div>
+        <img src="/logo-56moments.png" alt="" className="w-24 h-24 rounded-full" />
+        <p className="text-[13px] text-white/50 -mt-2">Enter password to continue</p>
         <motion.div
           animate={shake ? { x: [-8, 8, -6, 6, -4, 4, 0] } : {}}
           transition={{ duration: 0.4 }}
@@ -59,12 +59,12 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
             onKeyDown={e => e.key === 'Enter' && submit()}
             placeholder="Password"
             autoFocus
-            className="w-full px-4 py-3 rounded-xl bg-white/8 border border-white/10 text-white placeholder-neutral-600 text-sm outline-none focus:border-pink-500/60 focus:bg-white/10 transition-all text-center tracking-widest"
+            className="w-full px-4 py-3 rounded-xl bg-white/[0.07] border border-white/15 text-white placeholder-neutral-500 text-sm outline-none focus:border-white/30 focus:bg-white/10 transition-all"
           />
         </motion.div>
         <button
           onClick={submit}
-          className="w-full py-3 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-sm font-semibold transition-all active:scale-95"
+          className="w-full py-3 rounded-xl bg-white hover:bg-neutral-100 text-black text-sm font-bold transition-all active:scale-95"
         >
           Unlock
         </button>
@@ -355,7 +355,7 @@ export default function App() {
       {!isViewOnly && unlocked && (
         <>
           {/* Bottom editor bar */}
-          <div className={`absolute inset-x-0 bottom-0 p-6 flex justify-center pointer-events-none transition-all duration-500 ${showUI ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}>
+          <div className={`absolute inset-x-0 bottom-0 p-2 sm:p-6 flex justify-center pointer-events-none transition-all duration-500 ${showUI ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}>
             <AnimatePresence mode="wait">
               {activeMode === 'BOX_EDIT' ? (
                 <motion.div key="box-editor" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }} className="pointer-events-auto w-full max-w-4xl">
@@ -372,20 +372,21 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          {/* Top-right controls */}
-          <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
+          {/* Top-right controls — icon-only + tighter spacing below sm, wraps
+              to a second line rather than overflowing if it still doesn't fit */}
+          <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
 
             {/* Share button — only on the main studio, not on ?share= links */}
             {!isShareLink && (
               <motion.button
                 onClick={handleShare}
                 whileTap={{ scale: 0.92 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-xs sm:text-sm font-medium transition-all"
               >
                 {shareLoading
                   ? <Loader className="w-4 h-4 animate-spin" />
                   : <Share2  className="w-4 h-4" />}
-                <span>{shareLoading ? 'Starting…' : shareUrl ? 'Copy Link' : 'Share'}</span>
+                <span className="hidden sm:inline">{shareLoading ? 'Starting…' : shareUrl ? 'Copy Link' : 'Share'}</span>
               </motion.button>
             )}
 
@@ -393,16 +394,16 @@ export default function App() {
             <motion.button
               onClick={() => setIsViewOnly(true)}
               whileTap={{ scale: 0.92 }}
-              className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-xs sm:text-sm font-medium transition-all"
             >
               <Eye className="w-4 h-4" />
-              <span>Preview</span>
+              <span className="hidden sm:inline">Preview</span>
             </motion.button>
 
             {/* Edit-window countdown — only meaningful once a share is loaded */}
             {countdown && (
               <span
-                className={`px-3 py-2 rounded-full text-xs font-mono safe-blur border ${
+                className={`px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border ${
                   countdown.urgent
                     ? 'bg-red-500/15 border-red-500/30 text-red-300'
                     : 'bg-white/10 border-white/10 text-neutral-300'
@@ -418,20 +419,20 @@ export default function App() {
               <motion.button
                 onClick={() => setShowFinishConfirm(true)}
                 whileTap={{ scale: 0.92 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-pink-600/80 hover:bg-pink-600 border-pink-500/40 text-white text-sm font-semibold transition-all"
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-pink-600/80 hover:bg-pink-600 border-pink-500/40 text-white text-xs sm:text-sm font-semibold transition-all"
               >
                 <Check className="w-4 h-4" />
-                <span>End Editing</span>
+                <span className="hidden sm:inline">End Editing</span>
               </motion.button>
             )}
 
             {/* Show/Hide UI */}
             <button
               onClick={() => setShowUI(!showUI)}
-              className="p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
+              className="p-2 sm:p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
               title={showUI ? 'Hide Editor' : 'Show Editor'}
             >
-              {showUI ? <Settings className="w-5 h-5 text-neutral-400" /> : <Layers className="w-5 h-5 text-pink-500" />}
+              {showUI ? <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" /> : <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-pink-500" />}
             </button>
           </div>
         </>
@@ -441,20 +442,20 @@ export default function App() {
       {isViewOnly && unlocked && (
         <>
           {/* Top-right: share + edit */}
-          <div className="absolute top-6 right-6 z-50 flex items-center gap-2">
+          <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex items-center gap-1.5 sm:gap-2">
             {shareUrl && !isShareLink && (
               <button
                 onClick={() => { setShowShareToast(true); setToastCopied(false); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-sm font-medium transition-all"
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-xs sm:text-sm font-medium transition-all"
               >
                 <Share2 className="w-4 h-4" />
-                <span>Share</span>
+                <span className="hidden sm:inline">Share</span>
               </button>
             )}
             {!editingLocked && (
               <button
                 onClick={() => setIsViewOnly(false)}
-                className="p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
+                className="p-2 sm:p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
                 title="Edit"
               >
                 <Pencil className="w-4 h-4 text-neutral-400" />
@@ -640,28 +641,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Title */}
-      <div className="absolute top-6 left-6 pointer-events-none">
-        <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-violet-500 rounded-xl flex items-center justify-center shadow-lg shadow-pink-500/20">
-            <BoxIcon className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Explosion Box Studio</h1>
-            <p className="text-xs text-neutral-400 font-mono uppercase tracking-widest">
-              {shareLoading
-                ? 'Loading share…'
-                : isViewOnly
-                ? 'View only'
-                : activeMode === 'SIDE_EDIT'
-                ? `Editing Layer ${(selectedSide?.layer ?? 0) + 1} · ${selectedSide?.index === -1 ? 'Base' : `Side ${(selectedSide?.index ?? 0) + 1}`}`
-                : shareId
-                ? 'Editing · auto-saving'
-                : 'Customize Your 3D Box'}
-            </p>
-          </div>
-        </motion.div>
-      </div>
     </div>
   );
 }
