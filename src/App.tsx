@@ -85,12 +85,9 @@ const DEFAULT_CONFIG: BoxConfig = {
 export default function App() {
   const isShareLink = !!getShareId();
   const needsPassword = !!EDITOR_PASSWORD && !isShareLink;
-  // sessionStorage (not localStorage) so it survives a page refresh within the
-  // tab but still re-prompts in a fresh tab/window — matches typical "stay
-  // unlocked for this session" expectations without persisting forever.
-  const [unlocked, setUnlocked] = useState(
-    () => !needsPassword || sessionStorage.getItem('studioUnlocked') === '1'
-  );
+  // No persistence by design — the password is required on every visit and
+  // every reload, not just once per tab session.
+  const [unlocked, setUnlocked] = useState(() => !needsPassword);
 
   // Loading screen — shown until 3D first frame fires AND min time passes
   const [sceneReady, setSceneReady]   = useState(false);
@@ -346,7 +343,7 @@ export default function App() {
             transition={{ duration: 0.4 }}
             className="absolute inset-0 z-[500]"
           >
-            <PasswordGate onUnlock={() => { sessionStorage.setItem('studioUnlocked', '1'); setUnlocked(true); }} />
+            <PasswordGate onUnlock={() => setUnlocked(true)} />
           </motion.div>
         )}
       </AnimatePresence>
