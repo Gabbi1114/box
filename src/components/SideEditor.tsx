@@ -70,7 +70,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       id: uuidv4(),
       type,
       content: type === 'text' ? 'New Text' : type === 'image'
-        ? 'https://images.unsplash.com/photo-1518173946687-a4c8a9b749f5?w=500&auto=format&fit=crop&q=60'
+        ? 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=500&auto=format&fit=crop&q=60'
         : 'heart',
       x: 50, y: 50, scale: 1, rotation: 0, color: '#ffffff', fontSize: 24,
       designCanvasSize: getCanvasSize(),

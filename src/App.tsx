@@ -15,6 +15,7 @@ import {
   Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw,
 } from 'lucide-react';
 import { createShare, updateShare, loadShare, finalizeShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
+import { isDemoShareId, buildDemoContent, getDemoEditUntil, loadDemoLocalState, saveDemoLocalState } from './lib/demoShare.ts';
 import LoadingScreen from './components/LoadingScreen.tsx';
 
 const EDITOR_PASSWORD = import.meta.env.VITE_STUDIO_PASSWORD as string | undefined;
@@ -152,6 +153,23 @@ export default function App() {
     const id = getShareId();
     if (!id) return;
 
+    // Public demo sandbox — 100% client-built, never calls loadShare(). A
+    // visitor's own edits (and whether they've hit "finish") are resumed
+    // from localStorage; real share links below are completely untouched.
+    if (isDemoShareId(id)) {
+      const saved = loadDemoLocalState();
+      const content = saved ?? buildDemoContent();
+      setConfig({ ...content.config, openLevel: 0 });
+      setSides(content.sides);
+      setShareId(id);
+      setShareUrl(buildShareUrl(id));
+      setEditUntil(getDemoEditUntil());
+      const finished = saved?.finished ?? false;
+      setEditingLocked(finished);
+      setIsViewOnly(finished);
+      return;
+    }
+
     let cancelled = false;          // guards against StrictMode double-fire
     isLoadingShare.current = true;
     setShareLoading(true);
@@ -225,8 +243,13 @@ export default function App() {
   useEffect(() => {
     if (!shareId || isLoadingShare.current || isViewOnly) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    const isDemo = isDemoShareId(shareId);
     autoSaveTimer.current = setTimeout(() => {
-      updateShare(shareId, config, sides);
+      if (isDemo) {
+        saveDemoLocalState(config, sides, false); // private to this device — never hits the server
+      } else {
+        updateShare(shareId, config, sides);
+      }
     }, 2000);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [shareId, config, sides, isViewOnly]);
@@ -271,6 +294,7 @@ export default function App() {
   // Lazily creates a share the first time media needs to be uploaded.
   // Called from SideEditor when the user picks a photo but no share exists yet.
   const getOrCreateShareId = useCallback(async (): Promise<string | null> => {
+    if (shareId && isDemoShareId(shareId)) return null; // demo uploads fall back to local blob: URLs
     if (shareId) return shareId;
     const result = await createShare(config, sides);
     if (!result.ok) return null;
@@ -369,6 +393,14 @@ export default function App() {
             </AnimatePresence>
           </div>
 
+          {/* Demo sandbox banner — only on the hardcoded public demo link */}
+          {shareId && isDemoShareId(shareId) && (
+            <div className="absolute top-3 left-3 right-3 sm:top-6 sm:left-6 sm:right-auto z-50 max-w-md px-3 sm:px-4 py-2 rounded-2xl safe-blur border border-violet-400/30 bg-violet-950/60 text-[11px] sm:text-xs text-violet-100 leading-snug">
+              You're viewing a free demo — try editing anything. Changes stay only on this device and are never saved publicly.
+              {countdown && <> Edit window: <span className="font-mono">{countdown.text}</span></>}
+            </div>
+          )}
+
           {/* Top-right controls — icon-only + tighter spacing below sm, wraps
               to a second line rather than overflowing if it still doesn't fit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
@@ -438,6 +470,13 @@ export default function App() {
       {/* ── VIEW-ONLY UI ── */}
       {isViewOnly && unlocked && (
         <>
+          {/* Demo sandbox banner — shown in the locked/finished demo view too */}
+          {shareId && isDemoShareId(shareId) && (
+            <div className="absolute top-3 left-3 right-3 sm:top-6 sm:left-6 sm:right-auto z-50 max-w-md px-3 sm:px-4 py-2 rounded-2xl safe-blur border border-violet-400/30 bg-violet-950/60 text-[11px] sm:text-xs text-violet-100 leading-snug">
+              This is a free demo, viewed in finished/locked mode. Nothing here was saved publicly.
+            </div>
+          )}
+
           {/* Top-right: share + edit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex items-center gap-1.5 sm:gap-2">
             {shareUrl && !isShareLink && (
@@ -547,7 +586,9 @@ export default function App() {
                     setShowFinishConfirm(false);
                     setEditingLocked(true);
                     setIsViewOnly(true);
-                    if (shareId) {
+                    if (shareId && isDemoShareId(shareId)) {
+                      saveDemoLocalState(config, sides, true); // local-only lock — never touches the server
+                    } else if (shareId) {
                       localStorage.setItem(`editingLocked_${shareId}`, '1');
                       finalizeShare(shareId); // server-enforced — locks it for every visitor, not just this browser
                     }
