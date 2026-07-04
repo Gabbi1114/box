@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
+import { isDemoShareId } from '../lib/demoShare';
 
 interface SideEditorProps {
   side: BoxSide;
@@ -152,6 +153,12 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     setShowVideoInput(false);
     setUploading(true);
     setUploadError(null);
+    if (isDemoShareId(shareId)) {
+      // Demo sandbox — never touches the server, so skip the network round-trip entirely.
+      setUploading(false);
+      addVideo(URL.createObjectURL(file));
+      return;
+    }
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
       const result = await uploadMedia(effectiveShareId, file);
@@ -202,6 +209,19 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const handleImageFile = async (file: File) => {
     setUploading(true);
     setUploadError(null);
+    if (isDemoShareId(shareId)) {
+      // Demo sandbox — never touches the server, so skip the network round-trip entirely.
+      setUploading(false);
+      const url = URL.createObjectURL(file);
+      const el: GraphicElement = {
+        id: uuidv4(), type: 'image', content: url,
+        x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
+        designCanvasSize: getCanvasSize(),
+      };
+      onUpdate([...side.elements, el]);
+      setSelectedId(el.id);
+      return;
+    }
     // Resolve or lazily create a share ID so the photo goes to the server/CDN
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
