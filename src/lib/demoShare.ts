@@ -79,13 +79,7 @@ export function buildDemoContent(): { config: BoxConfig; sides: BoxSide[] } {
   return { config, sides };
 }
 
-const DEADLINE_KEY = `demo_editUntil_${DEMO_SHARE_ID}`;
-
-/** Anchored to this visitor's first open of the demo, not the current page load. */
+/** Fresh countdown every visit — resets along with the rest of the demo on reload. */
 export function getDemoEditUntil(): string {
-  const existing = localStorage.getItem(DEADLINE_KEY);
-  if (existing) return existing;
-  const editUntil = new Date(Date.now() + DEMO_EDIT_DAYS * 864e5).toISOString();
-  localStorage.setItem(DEADLINE_KEY, editUntil);
-  return editUntil;
+  return new Date(Date.now() + DEMO_EDIT_DAYS * 864e5).toISOString();
 }

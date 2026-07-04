@@ -388,14 +388,6 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          {/* Demo sandbox banner — only on the hardcoded public demo link */}
-          {shareId && isDemoShareId(shareId) && (
-            <div className="absolute top-3 left-3 right-3 sm:top-6 sm:left-6 sm:right-auto z-50 max-w-md px-3 sm:px-4 py-2 rounded-2xl safe-blur border border-violet-400/30 bg-violet-950/60 text-[11px] sm:text-xs text-violet-100 leading-snug">
-              You're viewing a free demo — try editing anything. Changes stay only on this device and are never saved publicly.
-              {countdown && <> Edit window: <span className="font-mono">{countdown.text}</span></>}
-            </div>
-          )}
-
           {/* Top-right controls — icon-only + tighter spacing below sm, wraps
               to a second line rather than overflowing if it still doesn't fit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
@@ -465,13 +457,6 @@ export default function App() {
       {/* ── VIEW-ONLY UI ── */}
       {isViewOnly && unlocked && (
         <>
-          {/* Demo sandbox banner — shown in the locked/finished demo view too */}
-          {shareId && isDemoShareId(shareId) && (
-            <div className="absolute top-3 left-3 right-3 sm:top-6 sm:left-6 sm:right-auto z-50 max-w-md px-3 sm:px-4 py-2 rounded-2xl safe-blur border border-violet-400/30 bg-violet-950/60 text-[11px] sm:text-xs text-violet-100 leading-snug">
-              This is a free demo, viewed in finished/locked mode. Nothing here was saved publicly — reloading the page starts a fresh demo.
-            </div>
-          )}
-
           {/* Top-right: share + edit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex items-center gap-1.5 sm:gap-2">
             {shareUrl && !isShareLink && (
