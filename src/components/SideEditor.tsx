@@ -5,6 +5,7 @@ import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Fi
 import { v4 as uuidv4 } from 'uuid';
 import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
 import { isDemoShareId } from '../lib/demoShare';
+import { useLang } from '../lib/i18n';
 
 interface SideEditorProps {
   side: BoxSide;
@@ -31,6 +32,7 @@ interface GifResult {
 }
 
 export default function SideEditor({ side, config, onUpdate, onClose, shareId, getOrCreateShareId }: SideEditorProps) {
+  const { t } = useLang();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [canvasSize, setCanvasSize] = useState(0);
@@ -285,7 +287,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           onClick={() => addElement('text')}
           className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Type className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Text</span>
+          <Type className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('text')}</span>
         </button>
         <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
@@ -296,7 +298,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           {uploading
             ? <Loader className="w-3.5 h-3.5 animate-spin" />
             : <ImageIcon className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">{uploading ? 'Converting…' : 'Photo'}</span>
+          <span className="hidden sm:inline">{uploading ? t('converting') : t('photo')}</span>
         </button>
         <input
           ref={photoFileRef}
@@ -310,28 +312,28 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           onClick={() => { setShowGifSearch(true); setGifResults([]); setGifQuery(''); }}
           className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Film className="w-3.5 h-3.5" /> <span className="hidden sm:inline">GIF</span>
+          <Film className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('gif')}</span>
         </button>
         <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
           onClick={() => { setShowVideoInput(true); setVideoUrl(''); }}
           className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Video className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Video</span>
+          <Video className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('video')}</span>
         </button>
         <div className="hidden sm:block w-px h-4 bg-white/10" />
         <button
           onClick={() => addElement('sticker')}
           className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
-          <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Sticker</span>
+          <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('sticker')}</span>
         </button>
         <div className="hidden sm:block w-px h-4 bg-white/10 mx-1" />
         <button
           onClick={onClose}
           className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 bg-white text-black text-xs font-bold rounded-full hover:scale-105 active:scale-95 transition-all"
         >
-          <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Done</span>
+          <Check className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('done')}</span>
         </button>
       </div>
 

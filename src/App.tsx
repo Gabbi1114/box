@@ -16,13 +16,38 @@ import {
 } from 'lucide-react';
 import { createShare, updateShare, loadShare, finalizeShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
 import { isDemoShareId, buildDemoContent, getDemoEditUntil } from './lib/demoShare.ts';
+import { useLang, Lang } from './lib/i18n.ts';
 import LoadingScreen from './components/LoadingScreen.tsx';
 
 const EDITOR_PASSWORD = import.meta.env.VITE_STUDIO_PASSWORD as string | undefined;
 
+function LangToggle() {
+  const { lang, setLang } = useLang();
+  const options: { key: Lang; label: string }[] = [
+    { key: 'mn', label: 'MN' },
+    { key: 'en', label: 'EN' },
+  ];
+  return (
+    <div className="flex items-center gap-1 p-1 rounded-full safe-blur border border-white/10 bg-white/10">
+      {options.map(o => (
+        <button
+          key={o.key}
+          onClick={() => setLang(o.key)}
+          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+            lang === o.key ? 'bg-white text-black' : 'text-neutral-300 hover:text-white'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [value, setValue] = useState('');
   const [shake, setShake]   = useState(false);
+  const { t } = useLang();
 
   const submit = () => {
     if (value === EDITOR_PASSWORD) {
@@ -41,13 +66,16 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
         className="absolute inset-0 pointer-events-none"
         style={{ backgroundImage: 'radial-gradient(circle at 50% 40%, rgba(139,92,246,0.35), rgba(15,23,42,0) 60%)' }}
       />
+      <div className="absolute top-6 left-6 z-10">
+        <LangToggle />
+      </div>
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         className="relative w-80 flex flex-col items-center gap-6"
       >
         <img src="/logo-56moments.png" alt="" className="w-24 h-24 rounded-full" />
-        <p className="text-[13px] text-white/50 -mt-2">Enter password to continue</p>
+        <p className="text-[13px] text-white/50 -mt-2">{t('passwordPrompt')}</p>
         <motion.div
           animate={shake ? { x: [-8, 8, -6, 6, -4, 4, 0] } : {}}
           transition={{ duration: 0.4 }}
@@ -58,7 +86,7 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
             value={value}
             onChange={e => setValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && submit()}
-            placeholder="Password"
+            placeholder={t('passwordPlaceholder')}
             autoFocus
             className="w-full px-4 py-3 rounded-xl bg-white/[0.07] border border-white/15 text-white placeholder-neutral-500 text-sm outline-none focus:border-white/30 focus:bg-white/10 transition-all"
           />
@@ -67,7 +95,7 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
           onClick={submit}
           className="w-full py-3 rounded-xl bg-white hover:bg-neutral-100 text-black text-sm font-bold transition-all active:scale-95"
         >
-          Unlock
+          {t('unlock')}
         </button>
       </motion.div>
     </div>
@@ -84,6 +112,7 @@ const DEFAULT_CONFIG: BoxConfig = {
 };
 
 export default function App() {
+  const { t } = useLang();
   const isShareLink = !!getShareId();
   const needsPassword = !!EDITOR_PASSWORD && !isShareLink;
   // No persistence by design — the password is required on every visit and
@@ -96,8 +125,8 @@ export default function App() {
   const loadingDone = sceneReady && minTimeDone;
 
   useEffect(() => {
-    const t = setTimeout(() => setMinTimeDone(true), 1800);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setMinTimeDone(true), 1800);
+    return () => clearTimeout(timer);
   }, []);
 
   const [config, setConfig] = useState<BoxConfig>(DEFAULT_CONFIG);
@@ -388,6 +417,11 @@ export default function App() {
             </AnimatePresence>
           </div>
 
+          {/* Top-left: language toggle, in the space freed up by removing the old title block */}
+          <div className="absolute top-3 left-3 sm:top-6 sm:left-6 z-50">
+            <LangToggle />
+          </div>
+
           {/* Top-right controls — icon-only + tighter spacing below sm, wraps
               to a second line rather than overflowing if it still doesn't fit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
@@ -402,7 +436,7 @@ export default function App() {
                 {shareLoading
                   ? <Loader className="w-4 h-4 animate-spin" />
                   : <Share2  className="w-4 h-4" />}
-                <span className="hidden sm:inline">{shareLoading ? 'Starting…' : shareUrl ? 'Copy Link' : 'Share'}</span>
+                <span className="hidden sm:inline">{shareLoading ? t('starting') : shareUrl ? t('copyLink') : t('share')}</span>
               </motion.button>
             )}
 
@@ -413,7 +447,7 @@ export default function App() {
               className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-xs sm:text-sm font-medium transition-all"
             >
               <Eye className="w-4 h-4" />
-              <span className="hidden sm:inline">Preview</span>
+              <span className="hidden sm:inline">{t('preview')}</span>
             </motion.button>
 
             {/* Edit-window countdown — only meaningful once a share is loaded */}
@@ -438,7 +472,7 @@ export default function App() {
                 className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-pink-600/80 hover:bg-pink-600 border-pink-500/40 text-white text-xs sm:text-sm font-semibold transition-all"
               >
                 <Check className="w-4 h-4" />
-                <span className="hidden sm:inline">End Editing</span>
+                <span className="hidden sm:inline">{t('endEditing')}</span>
               </motion.button>
             )}
 
@@ -446,7 +480,7 @@ export default function App() {
             <button
               onClick={() => setShowUI(!showUI)}
               className="p-2 sm:p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
-              title={showUI ? 'Hide Editor' : 'Show Editor'}
+              title={showUI ? t('hideEditor') : t('showEditor')}
             >
               {showUI ? <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-400" /> : <Layers className="w-4 h-4 sm:w-5 sm:h-5 text-pink-500" />}
             </button>
@@ -457,6 +491,11 @@ export default function App() {
       {/* ── VIEW-ONLY UI ── */}
       {isViewOnly && unlocked && (
         <>
+          {/* Top-left: language toggle */}
+          <div className="absolute top-3 left-3 sm:top-6 sm:left-6 z-50">
+            <LangToggle />
+          </div>
+
           {/* Top-right: share + edit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex items-center gap-1.5 sm:gap-2">
             {shareUrl && !isShareLink && (
@@ -465,14 +504,14 @@ export default function App() {
                 className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-xs sm:text-sm font-medium transition-all"
               >
                 <Share2 className="w-4 h-4" />
-                <span className="hidden sm:inline">Share</span>
+                <span className="hidden sm:inline">{t('share')}</span>
               </button>
             )}
             {!editingLocked && (
               <button
                 onClick={() => setIsViewOnly(false)}
                 className="p-2 sm:p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
-                title="Edit"
+                title={t('edit')}
               >
                 <Pencil className="w-4 h-4 text-neutral-400" />
               </button>
@@ -549,17 +588,17 @@ export default function App() {
               <div className="w-12 h-12 bg-pink-500/15 rounded-2xl flex items-center justify-center mb-4 mx-auto">
                 <Eye className="w-6 h-6 text-pink-400" />
               </div>
-              <h2 className="text-base font-bold text-white text-center mb-1">Finish editing?</h2>
+              <h2 className="text-base font-bold text-white text-center mb-1">{t('finishTitle')}</h2>
               <p className="text-xs text-neutral-400 text-center mb-5 leading-relaxed">
-                This will lock the box in view-only mode.<br />
-                You won't be able to edit it again.
+                {t('finishBody1')}<br />
+                {t('finishBody2')}
               </p>
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowFinishConfirm(false)}
                   className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-white/8 hover:bg-white/12 text-neutral-300 transition-all border border-white/10"
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
                 <button
                   onClick={() => {
@@ -574,7 +613,7 @@ export default function App() {
                   }}
                   className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-pink-600 hover:bg-pink-500 text-white transition-all"
                 >
-                  Yes, finish
+                  {t('yesFinish')}
                 </button>
               </div>
             </motion.div>
