@@ -15,7 +15,7 @@ import {
   Copy, Check, Loader, Eye, Pencil, X, Play, RotateCcw,
 } from 'lucide-react';
 import { createShare, updateShare, loadShare, finalizeShare, getShareId, buildShareUrl } from './lib/shareSystem.ts';
-import { isDemoShareId, buildDemoContent, getDemoEditUntil, loadDemoLocalState, saveDemoLocalState } from './lib/demoShare.ts';
+import { isDemoShareId, buildDemoContent, getDemoEditUntil } from './lib/demoShare.ts';
 import LoadingScreen from './components/LoadingScreen.tsx';
 
 const EDITOR_PASSWORD = import.meta.env.VITE_STUDIO_PASSWORD as string | undefined;
@@ -153,20 +153,19 @@ export default function App() {
     const id = getShareId();
     if (!id) return;
 
-    // Public demo sandbox — 100% client-built, never calls loadShare(). A
-    // visitor's own edits (and whether they've hit "finish") are resumed
-    // from localStorage; real share links below are completely untouched.
+    // Public demo sandbox — 100% client-built, never calls loadShare(). Every
+    // visit starts fresh from pristine content; edits live only in this page's
+    // React state and are gone on the next reload. Real share links below are
+    // completely untouched.
     if (isDemoShareId(id)) {
-      const saved = loadDemoLocalState();
-      const content = saved ?? buildDemoContent();
+      const content = buildDemoContent();
       setConfig({ ...content.config, openLevel: 0 });
       setSides(content.sides);
       setShareId(id);
       setShareUrl(buildShareUrl(id));
       setEditUntil(getDemoEditUntil());
-      const finished = saved?.finished ?? false;
-      setEditingLocked(finished);
-      setIsViewOnly(finished);
+      setEditingLocked(false);
+      setIsViewOnly(false);
       return;
     }
 
@@ -242,14 +241,10 @@ export default function App() {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!shareId || isLoadingShare.current || isViewOnly) return;
+    if (isDemoShareId(shareId)) return; // demo edits live only in React state — nothing to persist
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    const isDemo = isDemoShareId(shareId);
     autoSaveTimer.current = setTimeout(() => {
-      if (isDemo) {
-        saveDemoLocalState(config, sides, false); // private to this device — never hits the server
-      } else {
-        updateShare(shareId, config, sides);
-      }
+      updateShare(shareId, config, sides);
     }, 2000);
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [shareId, config, sides, isViewOnly]);
@@ -473,7 +468,7 @@ export default function App() {
           {/* Demo sandbox banner — shown in the locked/finished demo view too */}
           {shareId && isDemoShareId(shareId) && (
             <div className="absolute top-3 left-3 right-3 sm:top-6 sm:left-6 sm:right-auto z-50 max-w-md px-3 sm:px-4 py-2 rounded-2xl safe-blur border border-violet-400/30 bg-violet-950/60 text-[11px] sm:text-xs text-violet-100 leading-snug">
-              This is a free demo, viewed in finished/locked mode. Nothing here was saved publicly.
+              This is a free demo, viewed in finished/locked mode. Nothing here was saved publicly — reloading the page starts a fresh demo.
             </div>
           )}
 
@@ -586,12 +581,11 @@ export default function App() {
                     setShowFinishConfirm(false);
                     setEditingLocked(true);
                     setIsViewOnly(true);
-                    if (shareId && isDemoShareId(shareId)) {
-                      saveDemoLocalState(config, sides, true); // local-only lock — never touches the server
-                    } else if (shareId) {
+                    if (shareId && !isDemoShareId(shareId)) {
                       localStorage.setItem(`editingLocked_${shareId}`, '1');
                       finalizeShare(shareId); // server-enforced — locks it for every visitor, not just this browser
                     }
+                    // demo: locks this page view only — gone on next reload, never touches the server
                   }}
                   className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-pink-600 hover:bg-pink-500 text-white transition-all"
                 >

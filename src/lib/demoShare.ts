@@ -79,13 +79,6 @@ export function buildDemoContent(): { config: BoxConfig; sides: BoxSide[] } {
   return { config, sides };
 }
 
-interface DemoLocalState {
-  config: BoxConfig;
-  sides: BoxSide[];
-  finished: boolean;
-}
-
-const STATE_KEY    = `demo_state_${DEMO_SHARE_ID}`;
 const DEADLINE_KEY = `demo_editUntil_${DEMO_SHARE_ID}`;
 
 /** Anchored to this visitor's first open of the demo, not the current page load. */
@@ -95,22 +88,4 @@ export function getDemoEditUntil(): string {
   const editUntil = new Date(Date.now() + DEMO_EDIT_DAYS * 864e5).toISOString();
   localStorage.setItem(DEADLINE_KEY, editUntil);
   return editUntil;
-}
-
-export function loadDemoLocalState(): DemoLocalState | null {
-  try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as DemoLocalState;
-  } catch {
-    return null;
-  }
-}
-
-export function saveDemoLocalState(config: BoxConfig, sides: BoxSide[], finished: boolean): void {
-  try {
-    localStorage.setItem(STATE_KEY, JSON.stringify({ config, sides, finished }));
-  } catch {
-    // localStorage full/disabled — demo still works for this page view, just won't resume on reload
-  }
 }
