@@ -142,6 +142,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
       designCanvasSize: getCanvasSize(),
       bytes,
+      isVideo: true,
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -255,7 +256,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     setSelectedId(el.id);
   };
 
-  const isVideoContent = (url: string) => /\.(mp4|webm|ogg)(\?|$)/i.test(url) || url.startsWith('blob:');
+  // blob: URLs (local fallback) carry no extension to sniff, so the explicit
+  // isVideo flag is authoritative there; extension check covers hosted URLs.
+  const isVideoContent = (el: GraphicElement) => el.isVideo === true || /\.(mp4|webm|ogg)(\?|$)/i.test(el.content);
 
   const selected = side.elements.find(el => el.id === selectedId);
 
@@ -574,7 +577,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
             )}
             {el.type === 'image' && (
               <div className={`transition-all ${selectedId === el.id ? 'ring-2 ring-blue-500' : ''}`}>
-                {isVideoContent(el.content) ? (
+                {isVideoContent(el) ? (
                   <video
                     src={el.content}
                     autoPlay

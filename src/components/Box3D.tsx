@@ -2,7 +2,7 @@ import React, { useRef, useMemo, useState, useEffect, useCallback, Suspense } fr
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, ContactShadows, Edges, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { BoxConfig, BoxSide } from '../types';
+import { BoxConfig, BoxSide, GraphicElement } from '../types';
 
 // Draco decoder hosted locally (public/draco/) rather than drei's default CDN
 // path — avoids a third-party dependency at runtime for a feature this core.
@@ -25,9 +25,11 @@ const RES = isIOS ? 512 : 1024;
 let _activeVideoCount = 0;
 
 const isGifUrl   = (url: string) => /\.gif(\?|$)/i.test(url);
-const isVideoUrl = (url: string) =>
-  /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url) || url.startsWith('blob:');
-const isAnimated = (url: string) => isGifUrl(url) || isVideoUrl(url);
+// blob: URLs (local fallback) carry no extension to sniff, so the explicit
+// isVideo flag is authoritative there; extension check covers hosted URLs.
+const isVideoUrl = (el: GraphicElement) =>
+  el.isVideo === true || /\.(mp4|webm|ogg|mov)(\?|$)/i.test(el.content);
+const isAnimated = (el: GraphicElement) => isGifUrl(el.content) || isVideoUrl(el);
 
 // ---------------------------------------------------------------------------
 // Single shared RAF ticker — all animated sides share one loop instead of
@@ -115,7 +117,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
       staticCtx.fillRect(0, 0, RES, RES);
 
       for (const el of side.elements) {
-        if (el.type === 'image' && isAnimated(el.content)) continue; // animated: handled in drawFn
+        if (el.type === 'image' && isAnimated(el)) continue; // animated: handled in drawFn
 
         const dcs = el.designCanvasSize ?? windowCanvasSize;
         const texScale = RES / dcs;
@@ -167,11 +169,11 @@ function useSideTexture(side: BoxSide, innerColor: string) {
 
       let dirty = false;
       for (const el of side.elements) {
-        if (el.type !== 'image' || !isAnimated(el.content)) continue;
+        if (el.type !== 'image' || !isAnimated(el)) continue;
         const src = media.current.get(el.content);
         if (!src) continue;
 
-        if (isVideoUrl(el.content)) {
+        if (isVideoUrl(el)) {
           // Skip GPU upload if the video decoder hasn't produced a new frame yet
           const vid = src as HTMLVideoElement;
           const prev = lastVideoTime.current.get(el.content) ?? -1;
@@ -222,7 +224,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
 
     let pending = toLoad.length;
     for (const el of toLoad) {
-      if (isVideoUrl(el.content)) {
+      if (isVideoUrl(el)) {
         _activeVideoCount++;
         const vid = document.createElement('video');
         vid.loop = true;
@@ -270,7 +272,7 @@ function useSideTexture(side: BoxSide, innerColor: string) {
   }, [side.elements, innerColor]);
 
   // Animated textures: register with the shared RAF ticker (throttled to GIF_FPS)
-  const hasAnimated = side.elements.some(el => el.type === 'image' && isAnimated(el.content));
+  const hasAnimated = side.elements.some(el => el.type === 'image' && isAnimated(el));
   useEffect(() => {
     if (!hasAnimated) {
       if (registeredDraw.current) { unregisterAnimDraw(registeredDraw.current); registeredDraw.current = null; }

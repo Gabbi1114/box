@@ -15,6 +15,11 @@ export interface GraphicElement {
    *  accounting on delete. Absent for text/sticker elements and external URLs
    *  (e.g. Tenor GIFs) that were never uploaded to our own storage. */
   bytes?: number;
+  /** True only for actual video content. Needed because blob: URLs (local
+   *  fallback for photos/videos) carry no file-extension info to sniff type
+   *  from — without this flag, a photo stored as a blob: URL would otherwise
+   *  be indistinguishable from a video one and get rendered as one. */
+  isVideo?: boolean;
 }
 
 export interface BoxSide {
