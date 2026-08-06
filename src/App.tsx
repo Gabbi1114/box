@@ -142,6 +142,11 @@ export default function App() {
   const [toastCopied, setToastCopied] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError]   = useState<string | null>(null);
+  // A real ?share= id that failed to load (invalid, expired, or the create
+  // call never actually reached the server) — blocks the editor entirely
+  // instead of silently falling back to a blank, unsaved default box that
+  // looks identical to a working one.
+  const [shareLoadFailed, setShareLoadFailed] = useState(false);
 
   // View-only mode (set when loading from ?share= URL, or after clicking "Done Editing")
   const [isViewOnly, setIsViewOnly]   = useState(false);
@@ -206,7 +211,7 @@ export default function App() {
       if (cancelled) return;        // StrictMode unmounted this run — ignore
       isLoadingShare.current = false;
       setShareLoading(false);
-      if (!data) return;
+      if (!data) { setShareLoadFailed(true); return; }
       setConfig({ ...data.config, openLevel: 0 }); // always start closed
       setSides(data.sides);
       setShareId(id);
@@ -696,6 +701,27 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* A share link that failed to load blocks the whole app — otherwise
+          this would silently fall back to a blank, unsaved default box that
+          looks and behaves exactly like a real one. */}
+      {shareLoadFailed && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-neutral-950/95 backdrop-blur-sm px-6">
+          <div className="max-w-sm w-full text-center">
+            <p className="text-white font-semibold text-lg mb-2">This link isn't working</p>
+            <p className="text-white/60 text-sm leading-relaxed mb-6">
+              This link is invalid or has expired. If it came from an order, please contact 56 Moments for help.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-block rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-white/90"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );
