@@ -8,10 +8,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { BoxConfig, BoxSide, GraphicElement } from '../types';
 import { getShareId } from './shareSystem';
 
-// Opaque, non-guessable — generated the same way the server generates real
-// share ids (crypto.randomBytes(12).toString('base64url')), not a readable
-// word like "demo" that someone could type in by hand.
-export const DEMO_SHARE_ID = 'CU5RrnmmfWQs5eJ4';
+// Public, memorable — box.56moments.store/?share=test. Real share ids are
+// always crypto.randomBytes(12).toString('base64url') (16 chars from the
+// server), so "test" can never collide with a real paid one.
+export const DEMO_SHARE_ID = 'test';
 
 export function isDemoShareId(id: string | null | undefined): boolean {
   return id === DEMO_SHARE_ID;

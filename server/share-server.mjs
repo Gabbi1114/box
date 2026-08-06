@@ -102,10 +102,23 @@ try {
 const safeId  = (id) => path.basename(String(id)).replace(/[^a-zA-Z0-9_-]/g, '');
 const jsonPath = (id) => path.join(DATA_DIR, `${safeId(id)}.json`);
 
-// Public demo sandbox — must match src/lib/demoShare.ts's DEMO_SHARE_ID exactly.
-// The client never writes to this id, but reject writes anyway as defense in depth.
-const DEMO_SHARE_ID = 'CU5RrnmmfWQs5eJ4';
-const isDemoShareId = (id) => safeId(id) === DEMO_SHARE_ID;
+// 'test' is the public local-only demo route — src/lib/demoShare.ts never
+// calls this server for it at all (content is built entirely client-side),
+// so nothing here needs to special-case that id.
+
+// Creating a share (or pre-provisioning one for a specific paid id) requires
+// this shared secret — only 56moments.store's main server knows it, so a
+// browser calling this API directly can never mint a free share. Existing
+// shares remain freely readable/editable (GET/PUT/finalize/upload-media are
+// unauthenticated by design — that's how the customer who received a real
+// link uses it).
+const SHARE_CREATE_SECRET = process.env.SHARE_CREATE_SECRET;
+function requireCreateSecret(req, res, next) {
+  if (!SHARE_CREATE_SECRET) return next(); // not configured yet — dev convenience only
+  if (req.get('x-box-create-secret') !== SHARE_CREATE_SECRET)
+    return res.status(403).json({ error: 'Forbidden' });
+  next();
+}
 
 // Always write to local disk. If R2 is configured, also persist there so data
 // survives Render service restarts (Render free tier has ephemeral disk).
@@ -307,7 +320,7 @@ app.get('/api/health', (_req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/share — create new share
 // ---------------------------------------------------------------------------
-app.post('/api/share', express.json({ limit: '5mb' }), async (req, res) => {
+app.post('/api/share', requireCreateSecret, express.json({ limit: '5mb' }), async (req, res) => {
   const { config, sides } = req.body ?? {};
   if (!config || !sides) {
     return res.status(400).json({ error: 'config and sides are required' });
@@ -332,6 +345,35 @@ app.post('/api/share', express.json({ limit: '5mb' }), async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/share/:id/ensure — create a share at a SPECIFIC id if it doesn't
+// already exist (no-op otherwise, never overwrites). This is what
+// 56moments.store's main server calls right after a WebCard order is paid,
+// so the id it hands the customer is already real by the time they open it.
+// ---------------------------------------------------------------------------
+app.post('/api/share/:id/ensure', requireCreateSecret, express.json({ limit: '5mb' }), async (req, res) => {
+  const id = safeId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+
+  const existing = await readShare(id);
+  if (existing) return res.json({ ok: true, existed: true });
+
+  const { config, sides } = req.body ?? {};
+  if (!config || !sides) return res.status(400).json({ error: 'config and sides are required' });
+
+  await writeShare(id, {
+    v: 1, config, sides,
+    editUntil: null,
+    editDays: MAX_EDIT_DAYS,
+    finalized: false,
+    mediaBytes: 0,
+    createdAt: new Date().toISOString(),
+  });
+
+  console.log(`[share] ensured  ${id}`);
+  res.json({ ok: true, existed: false });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/share/:id — load share
 // ---------------------------------------------------------------------------
 app.get('/api/share/:id', async (req, res) => {
@@ -352,7 +394,6 @@ app.get('/api/share/:id', async (req, res) => {
 // PUT /api/share/:id — update share (within edit window)
 // ---------------------------------------------------------------------------
 app.put('/api/share/:id', express.json({ limit: '5mb' }), async (req, res) => {
-  if (isDemoShareId(req.params.id)) return res.status(403).json({ error: 'demo share is read-only' });
   const data = await readShare(req.params.id);
   if (!data)                 return res.status(404).json({ error: 'not found' });
   if (data.finalized)        return res.status(403).json({ error: 'finalized' });
@@ -373,7 +414,6 @@ app.post(
   '/api/share/:id/upload-media',
   express.raw({ type: '*/*', limit: '100mb' }),
   async (req, res) => {
-    if (isDemoShareId(req.params.id)) return res.status(403).json({ error: 'demo share is read-only' });
     const shareData = await readShare(req.params.id);
     if (!shareData) {
       return res.status(404).json({ error: 'share not found' });
@@ -421,7 +461,6 @@ app.post(
 // POST /api/share/:id/finalize — lock a share permanently (server-enforced)
 // ---------------------------------------------------------------------------
 app.post('/api/share/:id/finalize', async (req, res) => {
-  if (isDemoShareId(req.params.id)) return res.status(403).json({ error: 'demo share is read-only' });
   const data = await readShare(req.params.id);
   if (!data) return res.status(404).json({ error: 'not found' });
 
@@ -438,7 +477,6 @@ app.post('/api/share/:id/finalize', async (req, res) => {
 // ---------------------------------------------------------------------------
 app.delete('/api/share/:id/media', express.json({ limit: '1mb' }), async (req, res) => {
   const shareId = safeId(req.params.id);
-  if (isDemoShareId(shareId)) return res.status(403).json({ error: 'demo share is read-only' });
   const data = await readShare(shareId);
   if (!data) return res.status(404).json({ error: 'not found' });
   if (data.finalized) return res.status(403).json({ error: 'finalized' });
