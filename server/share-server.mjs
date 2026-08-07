@@ -19,10 +19,13 @@ const ROOT      = path.join(__dirname, '..');
 const DATA_DIR  = path.join(ROOT, 'share-data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
 const PORT      = Number(process.env.PORT ?? process.env.SHARE_PORT ?? 3001);
-const MAX_EDIT_DAYS = Number(process.env.SHARE_MAX_EDIT_DAYS ?? 5);
+// Fixed at 30 days / 15MB to match scrapbook and book exactly — hardcoded
+// (not env-driven) so a stray Render env var can't silently pull one app's
+// limits out of sync with the other two again.
+const MAX_EDIT_DAYS = 30;
 // Cumulative uploaded-media cap per share, enforced in upload-media below.
 // Keeps per-share storage cost bounded regardless of how many people use the app.
-const MEDIA_BYTES_LIMIT = Number(process.env.SHARE_MEDIA_BYTES_LIMIT ?? 10 * 1024 * 1024);
+const MEDIA_BYTES_LIMIT = 15 * 1024 * 1024;
 
 fs.mkdirSync(DATA_DIR,  { recursive: true });
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
