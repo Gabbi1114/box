@@ -323,19 +323,22 @@ async function convertImage(buf, mime, hd = false) {
   try {
     const img     = sharp(buf, { failOn: 'none' }).rotate();
     const meta    = await img.metadata();
-    // 1600px is 1.5× the 3D texture resolution — plenty of detail, much faster to encode
-    const maxSide = hd ? 2048 : 1600;
+    // Matches book/magazine's compression settings (1920px, AVIF, effort 4) —
+    // was WebP at effort:0 for ~10× faster encoding on Render's free-tier CPU,
+    // which is still the tradeoff being made here: AVIF at effort 4 is
+    // noticeably slower per upload than the old settings, in exchange for
+    // smaller files at the same quality and consistency with the other apps.
+    const maxSide = 1920;
     const resized = img.resize({
       width:  meta.width  > maxSide ? maxSide : undefined,
       height: meta.height > maxSide ? maxSide : undefined,
       fit: 'inside', withoutEnlargement: true,
       kernel: sharp.kernel.lanczos3,
     });
-    // WebP at effort:0 encodes ~10× faster than AVIF; still excellent quality + small files
-    const webp = await resized.webp({ quality: hd ? 88 : 82, effort: 0 }).toBuffer();
-    return { body: webp, contentType: 'image/webp', ext: '.webp' };
+    const avif = await resized.avif({ quality: hd ? 65 : 62, effort: 4 }).toBuffer();
+    return { body: avif, contentType: 'image/avif', ext: '.avif' };
   } catch (e) {
-    console.warn('[share] WebP conversion failed, storing original:', e.message);
+    console.warn('[share] AVIF conversion failed, storing original:', e.message);
     return { body: buf, contentType: mime, ext: EXT_BY_MIME[mime] ?? '.bin' };
   }
 }

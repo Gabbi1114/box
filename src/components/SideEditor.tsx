@@ -25,7 +25,12 @@ const STICKER_EMOJI: Record<string, string> = {
   heart: '❤️', star: '⭐', sparkle: '✨', face: '😊',
 };
 
-const TENOR_KEY = (import.meta as any).env?.VITE_TENOR_API_KEY ?? 'LIVDSRZULELA';
+// The old hardcoded key only ever worked against Tenor's now-shut-down v1
+// API — v2 requires a real Google Cloud API key with the Tenor API enabled
+// (console.cloud.google.com → enable "Tenor API" → create an API key, free
+// tier). Set VITE_TENOR_API_KEY on Cloudflare Pages once you have one; GIF
+// search returns no results until then.
+const TENOR_KEY = (import.meta as any).env?.VITE_TENOR_API_KEY ?? '';
 
 interface GifResult {
   id: string;
@@ -107,16 +112,22 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     if (!q.trim()) return;
     setGifLoading(true);
     try {
+      // Tenor's v1 API (api.tenor.com/v1) was shut down after Google's
+      // acquisition — it now returns 403 for every request, which is why GIF
+      // search stopped working. v2 lives on a different host, needs a real
+      // Google Cloud API key (the old hardcoded key was a v1-only key and
+      // isn't valid here), and nests format URLs under media_formats instead
+      // of a media[] array.
       const res = await fetch(
-        `https://api.tenor.com/v1/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12&media_filter=basic&contentfilter=medium`
+        `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12&contentfilter=medium&media_filter=tinygif,gif,mp4`
       );
       const data = await res.json();
       setGifResults((data.results ?? []).map((g: any) => ({
         id: g.id,
-        preview: g.media[0]?.tinygif?.url ?? g.media[0]?.gif?.url,
+        preview: g.media_formats?.tinygif?.url ?? g.media_formats?.gif?.url,
         // MP4: animates correctly on iOS/Android canvas; GIF ctx.drawImage only
         // draws frame 1 on iOS Safari. Cap is removed in Box3D so no limit.
-        url: g.media[0]?.mp4?.url ?? g.media[0]?.gif?.url,
+        url: g.media_formats?.mp4?.url ?? g.media_formats?.gif?.url,
       })).filter((g: GifResult) => g.url));
     } catch {
       setGifResults([]);
