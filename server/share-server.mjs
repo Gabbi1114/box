@@ -161,6 +161,53 @@ function editWindowOpen(share) {
 }
 
 // ---------------------------------------------------------------------------
+// Self-heal: if a share isn't on disk yet, ask 56moments.store's main server
+// whether this id was ever actually issued (paid for) before creating it here.
+// Covers two real gaps: the background /ensure call that runs right after an
+// order is approved can still be mid-retry (cold Render backend) when the
+// customer clicks the link, or it can have exhausted its retries entirely —
+// either way, without this, a link nobody did anything wrong to just 404s
+// forever with "invalid or expired". A random unpaid id still gets rejected,
+// since verify only returns true for ids that exist in a real order.
+// ---------------------------------------------------------------------------
+const MAIN_STORE_API_BASE = (process.env.MAIN_STORE_API_BASE ?? 'https://56moments.store').replace(/\/$/, '');
+
+function defaultBoxPayload() {
+  return {
+    config: { numLayers: 1, numSides: 4, baseColor: '#8b5cf6', innerColor: '#fdf2f8', size: 3, openLevel: 0, floatingShape: 'rose' },
+    sides: [0, 1, 2, 3, -1].map((index) => ({ id: `s${index}`, layer: 0, index, elements: [] })),
+  };
+}
+
+async function selfHealShare(id) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const r = await fetch(`${MAIN_STORE_API_BASE}/api/webcard-verify/${encodeURIComponent(id)}`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const { valid } = await r.json();
+    if (!valid) return null;
+  } catch (e) {
+    clearTimeout(timer);
+    console.warn(`[share] self-heal verify failed for ${id}:`, e.message);
+    return null;
+  }
+  const { config, sides } = defaultBoxPayload();
+  const data = {
+    v: 1, config, sides,
+    editUntil: null,
+    editDays: MAX_EDIT_DAYS,
+    finalized: false,
+    mediaBytes: 0,
+    createdAt: new Date().toISOString(),
+  };
+  await writeShare(id, data);
+  console.log(`[share] self-healed ${id} (verified with main store, was never created here)`);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // ffmpeg (video → WebM) — optional, graceful fallback if not installed
 // ---------------------------------------------------------------------------
 let ffmpegBin = null;
@@ -377,7 +424,8 @@ app.post('/api/share/:id/ensure', requireCreateSecret, express.json({ limit: '5m
 // GET /api/share/:id — load share
 // ---------------------------------------------------------------------------
 app.get('/api/share/:id', async (req, res) => {
-  const data = await readShare(req.params.id);
+  let data = await readShare(req.params.id);
+  if (!data) data = await selfHealShare(safeId(req.params.id));
   if (!data) return res.status(404).json({ error: 'not found' });
 
   // First view starts the edit-window countdown, not creation time — so a

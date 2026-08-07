@@ -33,6 +33,7 @@ export interface ShareResult {
   id: string;
   url: string;
   editUntil: string | null;
+  bytesLimit: number | null;
 }
 
 /** Create a new share. Returns the ID and a shareable URL. */
@@ -47,8 +48,8 @@ export async function createShare(
       body: JSON.stringify({ config, sides }),
     });
     if (!r.ok) return { ok: false, error: await r.text() };
-    const json = await r.json() as { id: string; editUntil: string | null };
-    return { ok: true, id: json.id, url: buildShareUrl(json.id), editUntil: json.editUntil };
+    const json = await r.json() as { id: string; editUntil: string | null; bytesLimit?: number };
+    return { ok: true, id: json.id, url: buildShareUrl(json.id), editUntil: json.editUntil, bytesLimit: json.bytesLimit ?? null };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -122,7 +123,7 @@ export async function loadShare(id: string): Promise<LoadedShare | null> {
 // ---------------------------------------------------------------------------
 
 export type UploadResult =
-  | { ok: true; url: string; bytes: number }
+  | { ok: true; url: string; bytes: number; mediaBytes?: number; bytesLimit?: number }
   | { ok: false; limitReached: true; mediaBytes: number; bytesLimit: number }
   | { ok: false; limitReached: false };
 
@@ -152,9 +153,9 @@ export async function uploadMedia(
       return { ok: false, limitReached: true, mediaBytes: json.mediaBytes ?? 0, bytesLimit: json.bytesLimit ?? 0 };
     }
     if (!r.ok) return { ok: false, limitReached: false };
-    const json = await r.json() as { url?: string; bytes?: number };
+    const json = await r.json() as { url?: string; bytes?: number; mediaBytes?: number; bytesLimit?: number };
     if (!json.url) return { ok: false, limitReached: false };
-    return { ok: true, url: json.url, bytes: json.bytes ?? 0 };
+    return { ok: true, url: json.url, bytes: json.bytes ?? 0, mediaBytes: json.mediaBytes, bytesLimit: json.bytesLimit };
   } catch {
     return { ok: false, limitReached: false };
   }
@@ -186,17 +187,19 @@ export function isServerHostedUrl(url: string): boolean {
 }
 
 /** Deletes an uploaded file and reclaims its bytes from the share's cap. No-ops for external URLs. */
-export async function deleteMedia(shareId: string, url: string, bytes: number): Promise<boolean> {
+export async function deleteMedia(shareId: string, url: string, bytes: number): Promise<{ ok: boolean; mediaBytes?: number }> {
   const key = serverHostedKey(url);
-  if (!key) return false;
+  if (!key) return { ok: false };
   try {
     const r = await fetch(`${API}/share/${encodeURIComponent(shareId)}/media`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, bytes }),
     });
-    return r.ok;
+    if (!r.ok) return { ok: false };
+    const json = await r.json().catch(() => ({} as any)) as { mediaBytes?: number };
+    return { ok: true, mediaBytes: json.mediaBytes };
   } catch {
-    return false;
+    return { ok: false };
   }
 }

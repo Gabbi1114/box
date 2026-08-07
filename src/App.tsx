@@ -156,6 +156,9 @@ export default function App() {
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   // Edit-window countdown — null until a loaded share reports its editUntil.
   const [editUntil, setEditUntil] = useState<string | null>(null);
+  // Storage used/limit for this share — null until a loaded/created share reports it.
+  const [mediaBytes, setMediaBytes] = useState<number | null>(null);
+  const [bytesLimit, setBytesLimit] = useState<number | null>(null);
 
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadingShare = useRef(false);
@@ -218,6 +221,8 @@ export default function App() {
       setShareUrl(buildShareUrl(id));
       setIsViewOnly(true);
       setEditUntil(data.editUntil);
+      setMediaBytes(data.mediaBytes);
+      setBytesLimit(data.bytesLimit);
       // Server-verified lock — true for every visitor once anyone finalizes,
       // not just the browser that clicked it. localStorage is a legacy/instant
       // fallback for a browser that finalized before this field existed.
@@ -270,6 +275,14 @@ export default function App() {
     return { text, urgent };
   }, [editUntil, editingLocked, countdownNow]);
 
+  // Storage-left display — mirrors the countdown badge's shape so both can
+  // sit side by side; hidden until a share has actually reported real numbers.
+  const storageText = useMemo(() => {
+    if (mediaBytes == null || bytesLimit == null || bytesLimit <= 0) return null;
+    const leftMb = Math.max(0, bytesLimit - mediaBytes) / (1024 * 1024);
+    return `${leftMb.toFixed(1)}MB left`;
+  }, [mediaBytes, bytesLimit]);
+
   // ---------------------------------------------------------------------------
   // Auto-save: push updates 2 s after last change (edit mode only)
   // ---------------------------------------------------------------------------
@@ -316,6 +329,8 @@ export default function App() {
     setShareError(null);
     setShareId(result.id);
     setShareUrl(result.url);
+    setMediaBytes(0);
+    setBytesLimit(result.bytesLimit);
     setShowShareToast(true);
     setToastCopied(false);
   }, [shareLoading, shareUrl, config, sides]);
@@ -329,6 +344,8 @@ export default function App() {
     if (!result.ok) return null;
     setShareId(result.id);
     setShareUrl(result.url);
+    setMediaBytes(0);
+    setBytesLimit(result.bytesLimit);
     return result.id;
   }, [shareId, config, sides]);
 
@@ -469,6 +486,16 @@ export default function App() {
               </span>
             )}
 
+            {/* Storage used/left for this box's uploaded photos & videos */}
+            {storageText && (
+              <span
+                className="px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border bg-white/10 border-white/10 text-neutral-300"
+                title="Storage remaining for photos and videos on this box"
+              >
+                {storageText}
+              </span>
+            )}
+
             {/* End Editing — permanent lock, only on shared links */}
             {shareId && (
               <motion.button
@@ -501,8 +528,31 @@ export default function App() {
             <LangToggle />
           </div>
 
-          {/* Top-right: share + edit */}
-          <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex items-center gap-1.5 sm:gap-2">
+          {/* Top-right: countdown, storage, share + edit — this is the toolbar
+              a customer actually sees on first opening their link (share links
+              land in view-only by default), so the countdown/storage badges
+              belong here, not just in the edit-mode toolbar. */}
+          <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
+            {countdown && (
+              <span
+                className={`px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border ${
+                  countdown.urgent
+                    ? 'bg-red-500/15 border-red-500/30 text-red-300'
+                    : 'bg-white/10 border-white/10 text-neutral-300'
+                }`}
+                title="Time left to edit this box before it locks automatically"
+              >
+                {countdown.text}
+              </span>
+            )}
+            {storageText && (
+              <span
+                className="px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border bg-white/10 border-white/10 text-neutral-300"
+                title="Storage remaining for photos and videos on this box"
+              >
+                {storageText}
+              </span>
+            )}
             {shareUrl && !isShareLink && (
               <button
                 onClick={() => { setShowShareToast(true); setToastCopied(false); }}
@@ -696,6 +746,7 @@ export default function App() {
                 config={config}
                 shareId={shareId ?? undefined}
                 getOrCreateShareId={getOrCreateShareId}
+                onMediaBytesChange={setMediaBytes}
               />
             </div>
           </motion.div>

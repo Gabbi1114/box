@@ -15,6 +15,8 @@ interface SideEditorProps {
   shareId?: string;
   /** Creates a share on demand so photo uploads always go to the server/CDN */
   getOrCreateShareId?: () => Promise<string | null>;
+  /** Reports the share's updated total media bytes after an upload/delete, so the parent can show a live storage indicator */
+  onMediaBytesChange?: (bytes: number) => void;
 }
 
 const TEXT_COLORS = ['#ffffff', '#000000', '#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa'];
@@ -31,7 +33,7 @@ interface GifResult {
   url: string; // mp4 preferred, gif fallback
 }
 
-export default function SideEditor({ side, config, onUpdate, onClose, shareId, getOrCreateShareId }: SideEditorProps) {
+export default function SideEditor({ side, config, onUpdate, onClose, shareId, getOrCreateShareId, onMediaBytesChange }: SideEditorProps) {
   const { t } = useLang();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -93,7 +95,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       // Reclaim storage for uploaded photos/videos. Fire-and-forget — doesn't
       // block the UI removal, and external URLs (e.g. Tenor GIFs) are already
       // filtered out by isServerHostedUrl so this never touches media we don't own.
-      deleteMedia(shareId, el.content, el.bytes ?? 0);
+      deleteMedia(shareId, el.content, el.bytes ?? 0).then(res => {
+        if (res.ok && typeof res.mediaBytes === 'number') onMediaBytesChange?.(res.mediaBytes);
+      });
     }
     onUpdate(side.elements.filter(el => el.id !== id));
     setSelectedId(null);
@@ -166,7 +170,11 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     if (effectiveShareId) {
       const result = await uploadMedia(effectiveShareId, file);
       setUploading(false);
-      if (result.ok) { addVideo(result.url, result.bytes); return; }
+      if (result.ok) {
+        addVideo(result.url, result.bytes);
+        if (typeof result.mediaBytes === 'number') onMediaBytesChange?.(result.mediaBytes);
+        return;
+      }
       if ('limitReached' in result && result.limitReached) {
         setUploadError('Storage limit reached for this box — remove a photo or video to add more.');
         return;
@@ -240,6 +248,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         };
         onUpdate([...side.elements, el]);
         setSelectedId(el.id);
+        if (typeof result.mediaBytes === 'number') onMediaBytesChange?.(result.mediaBytes);
         return;
       }
       if ('limitReached' in result && result.limitReached) {
