@@ -294,6 +294,59 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     return `polygon(${pts})`;
   }, [isBaseSide, config.numSides]);
 
+  // Read-only snapshot of the side's current content, used as the drawing
+  // tool's background so strokes land in context instead of on a blank
+  // square — same container/positioning as the real canvas above, minus
+  // any interactivity.
+  const renderStaticSidePreview = () => (
+    <div
+      className="relative h-full w-full overflow-hidden"
+      style={{ backgroundColor: config.innerColor, clipPath: polygonClipPath }}
+    >
+      {side.elements.map((el) => (
+        <div
+          key={el.id}
+          className="absolute"
+          style={{
+            left: `${el.x}%`,
+            top: `${el.y}%`,
+            transform: `translate(-50%, -50%) rotate(${el.rotation}deg) scale(${el.scale})`,
+          }}
+        >
+          {el.type === 'text' && (
+            <div
+              style={{ color: el.color, fontSize: `${el.fontSize}px`, fontWeight: 'bold', padding: '4px 8px' }}
+              className="whitespace-nowrap"
+            >
+              {el.content}
+            </div>
+          )}
+          {el.type === 'image' &&
+            (isVideoContent(el) ? (
+              <video
+                src={el.content}
+                muted
+                playsInline
+                className="block"
+                style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+              />
+            ) : (
+              <img
+                src={el.content}
+                className="block"
+                style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+              />
+            ))}
+          {el.type === 'sticker' && (
+            <span style={{ fontSize: '72px', lineHeight: 1, display: 'block' }}>
+              {STICKER_EMOJI[el.content] ?? '❤️'}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div className="w-full h-full relative flex items-center justify-center overflow-hidden bg-neutral-950">
 
@@ -775,6 +828,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
 
       {showDrawing && (
         <DrawingModal
+          background={renderStaticSidePreview()}
           onCancel={() => setShowDrawing(false)}
           onInsert={(file) => {
             setShowDrawing(false);

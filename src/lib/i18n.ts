@@ -46,6 +46,14 @@ const dict = {
   clear:            { en: 'Clear', mn: 'Цэвэрлэх' },
   eraser:           { en: 'Eraser', mn: 'Арчигч' },
   brushSize:        { en: 'Size', mn: 'Зузаан' },
+
+  penBrush:         { en: 'Pen', mn: 'Гар үзэг' },
+  pencilBrush:      { en: 'Pencil', mn: 'Харандаа' },
+  softBrush:        { en: 'Soft brush', mn: 'Зөөлөн зураас' },
+  markerBrush:      { en: 'Marker', mn: 'Маркер' },
+  sprayBrush:       { en: 'Spray', mn: 'Спрэй' },
+  circleBrush:      { en: 'Circles', mn: 'Тойрог' },
+  opacity:          { en: 'Opacity', mn: 'Тодрол' },
 } as const;
 
 export type TKey = keyof typeof dict;
