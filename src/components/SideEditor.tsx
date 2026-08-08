@@ -48,6 +48,11 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showDrawing, setShowDrawing] = useState(false);
+  // Set when drawing on a specific photo instead of the whole side — the
+  // canvas is sized to that photo's own rendered box (captured at click
+  // time) so the result drops back at exactly the same size/spot.
+  const [drawTargetId, setDrawTargetId] = useState<string | null>(null);
+  const [drawTargetSizePx, setDrawTargetSizePx] = useState({ w: 200, h: 200 });
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Synchronous canvas-size read — avoids the async state-update race where
@@ -223,9 +228,16 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
 
   /**
    * Upload an image file. Resizes client-side first for speed, then sends to
-   * the share server for WebP conversion and R2 storage.
+   * the share server for WebP conversion and R2 storage. `placement`
+   * overrides x/y/rotation/scale — used by the drawing tool's "draw on this
+   * photo" mode to drop the result back in the exact same spot instead of
+   * the usual centered default.
    */
-  const handleImageFile = async (file: File) => {
+  const handleImageFile = async (
+    file: File,
+    placement?: { x?: number; y?: number; rotation?: number; scale?: number },
+  ) => {
+    const base = { x: 50, y: 50, scale: 0.8, rotation: 0, ...placement };
     setUploading(true);
     setUploadError(null);
     if (isDemoShareId(shareId)) {
@@ -234,7 +246,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       const url = URL.createObjectURL(file);
       const el: GraphicElement = {
         id: uuidv4(), type: 'image', content: url,
-        x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
+        ...base, color: '#ffffff', fontSize: 24,
         designCanvasSize: getCanvasSize(),
       };
       onUpdate([...side.elements, el]);
@@ -250,7 +262,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       if (result.ok) {
         const el: GraphicElement = {
           id: uuidv4(), type: 'image', content: result.url,
-          x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
+          ...base, color: '#ffffff', fontSize: 24,
           designCanvasSize: getCanvasSize(),
           bytes: result.bytes,
         };
@@ -269,7 +281,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     const url = URL.createObjectURL(file);
     const el: GraphicElement = {
       id: uuidv4(), type: 'image', content: url,
-      x: 50, y: 50, scale: 0.8, rotation: 0, color: '#ffffff', fontSize: 24,
+      ...base, color: '#ffffff', fontSize: 24,
     };
     onUpdate([...side.elements, el]);
     setSelectedId(el.id);
@@ -596,6 +608,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         {side.elements.map((el) => (
           <div
             key={el.id}
+            data-el-id={el.id}
             className={`absolute cursor-move select-none touch-none ${selectedId === el.id ? 'z-50' : 'z-10'}`}
             style={{
               left: `${el.x}%`,
@@ -814,6 +827,27 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
               </>
             )}
 
+            {selected.type === 'image' && !isVideoContent(selected) && (
+              <>
+                <div className="w-px h-5 bg-white/10" />
+                <button
+                  onClick={() => {
+                    const node = containerRef.current?.querySelector<HTMLElement>(`[data-el-id="${selected.id}"]`);
+                    const rect = node?.getBoundingClientRect();
+                    setDrawTargetSizePx(
+                      rect ? { w: rect.width, h: rect.height } : { w: 200, h: 200 },
+                    );
+                    setDrawTargetId(selected.id);
+                    setShowDrawing(true);
+                  }}
+                  className="text-neutral-400 hover:text-pink-400 transition-colors p-1"
+                  title={t('draw')}
+                >
+                  <PenTool className="w-4 h-4" />
+                </button>
+              </>
+            )}
+
             <div className="w-px h-5 bg-white/10" />
 
             <button
@@ -826,7 +860,39 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         )}
       </AnimatePresence>
 
-      {showDrawing && (
+      {showDrawing && drawTargetId && (() => {
+        const targetEl = side.elements.find(e => e.id === drawTargetId);
+        if (!targetEl) return null;
+        // Canvas keeps the photo's own on-screen aspect ratio (captured at
+        // click time), scaled up 4x for a crisp brush. Since the drawn PNG
+        // then goes through the exact same maxWidth/maxHeight-capped,
+        // scale-multiplied sizing as any image, reusing the original
+        // rotation/scale reproduces the same final on-screen size.
+        const elW = Math.max(40, Math.round(drawTargetSizePx.w));
+        const elH = Math.max(40, Math.round(drawTargetSizePx.h));
+        return (
+          <DrawingModal
+            canvasWidth={elW * 4}
+            canvasHeight={elH * 4}
+            background={
+              <img src={targetEl.content} className="h-full w-full object-cover" />
+            }
+            onCancel={() => { setShowDrawing(false); setDrawTargetId(null); }}
+            onInsert={(file) => {
+              setShowDrawing(false);
+              setDrawTargetId(null);
+              void handleImageFile(file, {
+                x: targetEl.x,
+                y: targetEl.y,
+                rotation: targetEl.rotation,
+                scale: targetEl.scale,
+              });
+            }}
+          />
+        );
+      })()}
+
+      {showDrawing && !drawTargetId && (
         <DrawingModal
           background={renderStaticSidePreview()}
           onCancel={() => setShowDrawing(false)}
