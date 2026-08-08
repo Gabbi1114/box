@@ -31,6 +31,14 @@ const dict = {
   video:            { en: 'Video', mn: 'Видео' },
   sticker:          { en: 'Sticker', mn: 'Наалт' },
   done:             { en: 'Done', mn: 'Болсон' },
+
+  editSide:         { en: 'Edit a side', mn: 'Тал засах' },
+  pickSideTitle:    { en: 'Choose a side to edit', mn: 'Засах талаа сонгоно уу' },
+  side:             { en: 'Side', mn: 'Тал' },
+  base:             { en: 'Base', mn: 'Ёроол' },
+  layer:            { en: 'Layer', mn: 'Давхарга' },
+  hasContent:       { en: 'Has content', mn: 'Агуулгатай' },
+  close:            { en: 'Close', mn: 'Хаах' },
 } as const;
 
 export type TKey = keyof typeof dict;

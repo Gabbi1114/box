@@ -134,6 +134,10 @@ export default function App() {
   const [activeMode, setActiveMode] = useState<AppMode>('BOX_EDIT');
   const [selectedSideId, setSelectedSideId] = useState<string | null>(null);
   const [showUI, setShowUI] = useState(true);
+  // Explicit side picker — the alternative to tapping a face directly on the
+  // rotating 3D box, which is easy to mistake for a rotate/drag gesture
+  // instead of a selection (this is what made the editor hard to use).
+  const [showSidePicker, setShowSidePicker] = useState(false);
 
   // Share state
   const [shareId, setShareId]         = useState<string | null>(null);
@@ -370,6 +374,17 @@ export default function App() {
     setActiveMode('SIDE_EDIT');
   };
 
+  // Picker version of the same selection — the box only exposes sides to
+  // click once it's open (see the guard above), which a picker shouldn't
+  // require the user to know or do manually first.
+  const selectSideFromPicker = (sideId: string) => {
+    if (isViewOnly) return;
+    setConfig(prev => (prev.openLevel === 0 ? { ...prev, openLevel: 1 } : prev));
+    setSelectedSideId(sideId);
+    setActiveMode('SIDE_EDIT');
+    setShowSidePicker(false);
+  };
+
   const updateSideElements = (sideId: string, elements: GraphicElement[]) =>
     setSides(prev => prev.map(s => s.id === sideId ? { ...s, elements } : s));
 
@@ -447,6 +462,18 @@ export default function App() {
           {/* Top-right controls — icon-only + tighter spacing below sm, wraps
               to a second line rather than overflowing if it still doesn't fit */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
+
+            {/* Edit a side — explicit picker instead of requiring a tap
+                directly on the rotating 3D box, which is easy to trigger a
+                rotate/drag gesture on by mistake instead of a selection. */}
+            <motion.button
+              onClick={() => setShowSidePicker(true)}
+              whileTap={{ scale: 0.92 }}
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-pink-600/80 hover:bg-pink-600 border-pink-500/40 text-white text-xs sm:text-sm font-semibold transition-all"
+            >
+              <Layers className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('editSide')}</span>
+            </motion.button>
 
             {/* Share button — only on the main studio, not on ?share= links */}
             {!isShareLink && (
@@ -670,6 +697,78 @@ export default function App() {
                 >
                   {t('yesFinish')}
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── SIDE PICKER — explicit alternative to tapping a face directly on
+          the rotating 3D box; see the "Edit a side" button above ── */}
+      <AnimatePresence>
+        {showSidePicker && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[200] flex items-center justify-center bg-black/70 safe-blur px-4"
+            onClick={() => setShowSidePicker(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 16 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-sm max-h-[80vh] bg-neutral-900/98 safe-blur border border-white/10 rounded-2xl p-5 shadow-2xl overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold text-white">{t('pickSideTitle')}</h2>
+                <button
+                  onClick={() => setShowSidePicker(false)}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-4">
+                {Array.from({ length: config.numLayers }, (_, i) => i).map(layerIdx => {
+                  const layerSides = sides
+                    .filter(s => s.layer === layerIdx)
+                    .sort((a, b) => a.index - b.index);
+                  return (
+                    <div key={layerIdx}>
+                      {config.numLayers > 1 && (
+                        <div className="text-[10px] font-mono uppercase tracking-wide text-neutral-500 mb-1.5">
+                          {t('layer')} {layerIdx + 1}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-3 gap-2">
+                        {layerSides.map(side => {
+                          const hasContent = side.elements.length > 0;
+                          const label = side.index === -1 ? t('base') : `${t('side')} ${side.index + 1}`;
+                          return (
+                            <button
+                              key={side.id}
+                              onClick={() => selectSideFromPicker(side.id)}
+                              title={hasContent ? t('hasContent') : undefined}
+                              className={`relative flex items-center justify-center gap-1 py-3 rounded-xl text-xs font-medium transition-all border ${
+                                selectedSideId === side.id
+                                  ? 'bg-pink-600 border-pink-500 text-white'
+                                  : 'bg-white/5 border-white/10 text-neutral-300 hover:bg-white/10 hover:border-white/20'
+                              }`}
+                            >
+                              {label}
+                              {hasContent && (
+                                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </motion.div>
           </motion.div>

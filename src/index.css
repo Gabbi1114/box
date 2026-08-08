@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* The <meta viewport user-scalable=no> tag alone doesn't reliably block
+   pinch-zoom anymore — modern iOS Safari ignores it for accessibility
+   reasons. Blocking it at the CSS level here means the whole PAGE (fixed
+   toolbars, buttons) can never be pinch-zoomed out of position, while the
+   3D canvas keeps its own independent zoom control (the on-screen slider) —
+   that's canvas-scoped pointer/wheel handling, unaffected by this. */
+html,
+body {
+  touch-action: pan-x pan-y;
+}
+
 /* ── iOS Safari: kill backdrop-filter on touch devices ── */
 /* Stacking multiple backdrop-blur layers is a documented iOS Safari crash vector */
 @media (hover: none) and (pointer: coarse) {
