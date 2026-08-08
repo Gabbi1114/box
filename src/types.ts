@@ -13,7 +13,7 @@ export interface GraphicElement {
   designCanvasSize?: number;
   /** Stored byte size of a server-uploaded image/video, for accurate mediaBytes
    *  accounting on delete. Absent for text/sticker elements and external URLs
-   *  (e.g. Tenor GIFs) that were never uploaded to our own storage. */
+   *  (e.g. GIPHY GIFs) that were never uploaded to our own storage. */
   bytes?: number;
   /** True only for actual video content. Needed because blob: URLs (local
    *  fallback for photos/videos) carry no file-extension info to sniff type

@@ -163,7 +163,7 @@ export async function uploadMedia(
 
 // ---------------------------------------------------------------------------
 // Orphan cleanup — deleting an element that references our own uploaded file
-// should reclaim its storage. External URLs (e.g. Tenor GIFs) are never ours
+// should reclaim its storage. External URLs (e.g. GIPHY GIFs) are never ours
 // to delete and cost us nothing, so they're left alone.
 // ---------------------------------------------------------------------------
 
@@ -181,7 +181,7 @@ function serverHostedKey(url: string): string | null {
   return null;
 }
 
-/** True if this URL points at our own R2/local storage (not an external CDN like Tenor). */
+/** True if this URL points at our own R2/local storage (not an external CDN like GIPHY). */
 export function isServerHostedUrl(url: string): boolean {
   return serverHostedKey(url) !== null;
 }

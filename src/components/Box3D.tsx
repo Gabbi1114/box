@@ -20,7 +20,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
 const RES = isIOS ? 512 : 1024;
 
 // Track active video elements so we can clean them up on unmount.
-// No hard cap — short looping Tenor clips use efficient software decoders
+// No hard cap — short looping GIPHY clips use efficient software decoders
 // on modern devices. The browser will fire onerror if it truly runs out.
 let _activeVideoCount = 0;
 

@@ -25,12 +25,13 @@ const STICKER_EMOJI: Record<string, string> = {
   heart: '❤️', star: '⭐', sparkle: '✨', face: '😊',
 };
 
-// The old hardcoded key only ever worked against Tenor's now-shut-down v1
-// API — v2 requires a real Google Cloud API key with the Tenor API enabled
-// (console.cloud.google.com → enable "Tenor API" → create an API key, free
-// tier). Set VITE_TENOR_API_KEY on Cloudflare Pages once you have one; GIF
-// search returns no results until then.
-const TENOR_KEY = (import.meta as any).env?.VITE_TENOR_API_KEY ?? '';
+// GIPHY, not Tenor — Google discontinued the Tenor API entirely (new key
+// sign-ups stopped Jan 13 2026, fully decommissioned Jun 30 2026), so no key
+// will ever work for it again, for anyone. Get a free key at
+// developers.giphy.com (create an app — no Google Cloud project/billing
+// needed) and set it as VITE_GIPHY_API_KEY on Cloudflare Pages; GIF search
+// returns no results until then.
+const GIPHY_KEY = (import.meta as any).env?.VITE_GIPHY_API_KEY ?? '';
 
 interface GifResult {
   id: string;
@@ -98,7 +99,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       URL.revokeObjectURL(el.content);
     } else if (el?.content && shareId && isServerHostedUrl(el.content)) {
       // Reclaim storage for uploaded photos/videos. Fire-and-forget — doesn't
-      // block the UI removal, and external URLs (e.g. Tenor GIFs) are already
+      // block the UI removal, and external URLs (e.g. GIPHY GIFs) are already
       // filtered out by isServerHostedUrl so this never touches media we don't own.
       deleteMedia(shareId, el.content, el.bytes ?? 0).then(res => {
         if (res.ok && typeof res.mediaBytes === 'number') onMediaBytesChange?.(res.mediaBytes);
@@ -112,22 +113,16 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     if (!q.trim()) return;
     setGifLoading(true);
     try {
-      // Tenor's v1 API (api.tenor.com/v1) was shut down after Google's
-      // acquisition — it now returns 403 for every request, which is why GIF
-      // search stopped working. v2 lives on a different host, needs a real
-      // Google Cloud API key (the old hardcoded key was a v1-only key and
-      // isn't valid here), and nests format URLs under media_formats instead
-      // of a media[] array.
       const res = await fetch(
-        `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&key=${TENOR_KEY}&limit=12&contentfilter=medium&media_filter=tinygif,gif,mp4`
+        `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=12&rating=g&lang=en`
       );
       const data = await res.json();
-      setGifResults((data.results ?? []).map((g: any) => ({
+      setGifResults((data.data ?? []).map((g: any) => ({
         id: g.id,
-        preview: g.media_formats?.tinygif?.url ?? g.media_formats?.gif?.url,
+        preview: g.images?.fixed_width?.url ?? g.images?.original?.url,
         // MP4: animates correctly on iOS/Android canvas; GIF ctx.drawImage only
         // draws frame 1 on iOS Safari. Cap is removed in Box3D so no limit.
-        url: g.media_formats?.mp4?.url ?? g.media_formats?.gif?.url,
+        url: g.images?.original?.mp4 ?? g.images?.original?.url,
       })).filter((g: GifResult) => g.url));
     } catch {
       setGifResults([]);
