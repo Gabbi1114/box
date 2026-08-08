@@ -833,21 +833,28 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Side Editor overlay (edit mode only) */}
+      {/* Side Editor — a genuine full-screen dedicated page (fixed inset-0,
+          not a centered floating card), opened directly by clicking a layer
+          (either tapping its face on the 3D box, or picking it from the
+          side picker below) — the same one-click-in, full takeover pattern
+          book's PageEditor.jsx uses. */}
       <AnimatePresence>
         {!isViewOnly && activeMode === 'SIDE_EDIT' && selectedSide && (
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="absolute inset-0 flex items-center justify-center p-8 z-50 pointer-events-none">
-            <div className="w-full max-w-6xl h-[80vh] pointer-events-auto">
-              <SideEditor
-                side={selectedSide}
-                onUpdate={(elements) => updateSideElements(selectedSide.id, elements)}
-                onClose={handleBackToBox}
-                config={config}
-                shareId={shareId ?? undefined}
-                getOrCreateShareId={getOrCreateShareId}
-                onMediaBytesChange={setMediaBytes}
-              />
-            </div>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            className="fixed inset-0 z-[150]"
+          >
+            <SideEditor
+              side={selectedSide}
+              onUpdate={(elements) => updateSideElements(selectedSide.id, elements)}
+              onClose={handleBackToBox}
+              config={config}
+              shareId={shareId ?? undefined}
+              getOrCreateShareId={getOrCreateShareId}
+              onMediaBytesChange={setMediaBytes}
+            />
           </motion.div>
         )}
       </AnimatePresence>

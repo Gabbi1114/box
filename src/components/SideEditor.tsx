@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { BoxSide, GraphicElement, BoxConfig } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader } from 'lucide-react';
+import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
 import { isDemoShareId } from '../lib/demoShare';
 import { useLang } from '../lib/i18n';
+import DrawingModal from './DrawingModal';
 
 interface SideEditorProps {
   side: BoxSide;
@@ -46,6 +47,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const [canvasSize, setCanvasSize] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showDrawing, setShowDrawing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Synchronous canvas-size read — avoids the async state-update race where
@@ -342,6 +344,13 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
         >
           <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('sticker')}</span>
+        </button>
+        <div className="hidden sm:block w-px h-4 bg-white/10" />
+        <button
+          onClick={() => setShowDrawing(true)}
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-full text-xs text-neutral-400 hover:text-white hover:bg-white/10 transition-all"
+        >
+          <PenTool className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('draw')}</span>
         </button>
         <div className="hidden sm:block w-px h-4 bg-white/10 mx-1" />
         <button
@@ -763,6 +772,16 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           </motion.div>
         )}
       </AnimatePresence>
+
+      {showDrawing && (
+        <DrawingModal
+          onCancel={() => setShowDrawing(false)}
+          onInsert={(file) => {
+            setShowDrawing(false);
+            void handleImageFile(file);
+          }}
+        />
+      )}
     </div>
   );
 }

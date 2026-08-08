@@ -39,6 +39,13 @@ const dict = {
   layer:            { en: 'Layer', mn: 'Давхарга' },
   hasContent:       { en: 'Has content', mn: 'Агуулгатай' },
   close:            { en: 'Close', mn: 'Хаах' },
+
+  draw:             { en: 'Draw', mn: 'Зурах' },
+  insert:           { en: 'Insert', mn: 'Оруулах' },
+  undo:             { en: 'Undo', mn: 'Буцаах' },
+  clear:            { en: 'Clear', mn: 'Цэвэрлэх' },
+  eraser:           { en: 'Eraser', mn: 'Арчигч' },
+  brushSize:        { en: 'Size', mn: 'Зузаан' },
 } as const;
 
 export type TKey = keyof typeof dict;
