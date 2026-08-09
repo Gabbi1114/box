@@ -152,8 +152,19 @@ export default function App() {
   // looks identical to a working one.
   const [shareLoadFailed, setShareLoadFailed] = useState(false);
 
-  // View-only mode (set when loading from ?share= URL, or after clicking "Done Editing")
-  const [isViewOnly, setIsViewOnly]   = useState(false);
+  // View-only mode (set when loading from ?share= URL, or after clicking "Done Editing").
+  // Computed upfront (not just defaulted false) so the bare studio URL — no
+  // ?share= at all, which is what the main marketing site iframes in as a
+  // decorative preview with no real box/session behind it — never flashes
+  // as a live editable studio even for a frame. Demo and real-share ids
+  // match what their own load effects below set anyway, so there's no
+  // flicker for those paths either.
+  const [isViewOnly, setIsViewOnly]   = useState(() => {
+    const id = getShareId();
+    if (!id) return true;                 // bare studio — passive by default
+    if (isDemoShareId(id)) return false;  // interactive demo — starts editable
+    return true;                          // real share link — starts in view-only
+  });
   // Server-enforced permanent lock (POST /api/share/:id/finalize) — true for
   // every device that opens the link, not just the one that clicked "Finish".
   const [editingLocked, setEditingLocked] = useState(false);
@@ -558,41 +569,15 @@ export default function App() {
             <LangToggle />
           </div>
 
-          {/* Top-right: countdown, storage, share + edit — this is the toolbar
-              a customer actually sees on first opening their link (share links
-              land in view-only by default), so the countdown/storage badges
-              belong here, not just in the edit-mode toolbar. */}
+          {/* Top-right: view mode stays deliberately bare — no countdown,
+              storage, or share badges, just a way back into editing, and
+              only when there's an actual share behind this page (real link
+              or the interactive demo). The bare studio URL (no ?share= at
+              all — what the main marketing site iframes as a decorative
+              preview) has isShareLink false here, so it gets nothing at
+              all: no editing chrome should ever be reachable from there. */}
           <div className="absolute top-3 right-3 sm:top-6 sm:right-6 z-50 flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)]">
-            {countdown && (
-              <span
-                className={`px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border ${
-                  countdown.urgent
-                    ? 'bg-red-500/15 border-red-500/30 text-red-300'
-                    : 'bg-white/10 border-white/10 text-neutral-300'
-                }`}
-                title="Time left to edit this box before it locks automatically"
-              >
-                {countdown.text}
-              </span>
-            )}
-            {storageText && (
-              <span
-                className="px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border bg-white/10 border-white/10 text-neutral-300"
-                title="Storage remaining for photos and videos on this box"
-              >
-                {storageText}
-              </span>
-            )}
-            {shareUrl && !isShareLink && (
-              <button
-                onClick={() => { setShowShareToast(true); setToastCopied(false); }}
-                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-full safe-blur border bg-white/10 hover:bg-white/20 border-white/10 text-white text-xs sm:text-sm font-medium transition-all"
-              >
-                <Share2 className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('share')}</span>
-              </button>
-            )}
-            {!editingLocked && (
+            {isShareLink && !editingLocked && (
               <button
                 onClick={() => setIsViewOnly(false)}
                 className="p-2 sm:p-2.5 bg-white/10 hover:bg-white/20 safe-blur rounded-full border border-white/10 transition-all active:scale-90"
