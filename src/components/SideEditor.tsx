@@ -383,8 +383,11 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
     setUploading(true);
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
-      const toUpload = await resizeForUpload(file);
-      const result   = await uploadMedia(effectiveShareId, toUpload);
+      // Not resizeForUpload — it always re-encodes to JPEG, which has no
+      // alpha channel and would flatten the ink's transparent areas to
+      // black. The drawing canvas is already capped at 900×900, so there's
+      // nothing worth resizing anyway; upload the PNG as-is.
+      const result = await uploadMedia(effectiveShareId, file);
       setUploading(false);
       if (result.ok) {
         onUpdateDrawing(result.url);
@@ -416,8 +419,8 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
     setUploading(true);
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
-      const toUpload = await resizeForUpload(file);
-      const result   = await uploadMedia(effectiveShareId, toUpload);
+      // Not resizeForUpload — see applySideDrawing for why (kills alpha).
+      const result = await uploadMedia(effectiveShareId, file);
       setUploading(false);
       if (result.ok) {
         swapElementField(elementId, 'drawingOverlay', result.url);
