@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BoxSide, GraphicElement, BoxConfig } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool, Crop, SendToBack, BringToFront } from 'lucide-react';
+import { Type, Image as ImageIcon, Sparkles, Trash2, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool, Crop, SendToBack, BringToFront } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
 import { isDemoShareId } from '../lib/demoShare';
@@ -890,42 +890,81 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
               </div>
             )}
 
-            {/* Resize handle */}
+            {/* Scale + rotate handles — drag directly on the object instead
+                of the old toolbar sliders, matching scrapbook's pinch-point
+                handles. Both are children of the rotate+scale-transformed
+                wrapper, so they inherit its rotation and stay glued to the
+                object's corner/top as it turns. */}
             {selectedId === el.id && (
-              <div
-                className="absolute -right-5 -bottom-5 w-10 h-10 flex items-center justify-center cursor-nwse-resize z-[100]"
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  if (!containerRef.current) return;
-                  setIsResizing(true);
+              <>
+                <div
+                  className="absolute left-1/2 -top-8 -translate-x-1/2 w-7 h-7 flex items-center justify-center cursor-grab active:cursor-grabbing z-[100]"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (!containerRef.current) return;
+                    setIsResizing(true);
 
-                  const rect = containerRef.current.getBoundingClientRect();
-                  const cx = rect.left + (el.x / 100) * rect.width;
-                  const cy = rect.top + (el.y / 100) * rect.height;
-                  const initDist = Math.hypot(e.clientX - cx, e.clientY - cy);
-                  const initScale = el.scale;
+                    const rect = containerRef.current.getBoundingClientRect();
+                    const cx = rect.left + (el.x / 100) * rect.width;
+                    const cy = rect.top + (el.y / 100) * rect.height;
+                    const baseRotation = el.rotation;
+                    const startAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
 
-                  const onMove = (mv: PointerEvent) => {
-                    mv.preventDefault();
-                    const d = Math.hypot(mv.clientX - cx, mv.clientY - cy);
-                    if (initDist > 0) {
-                      updateElement(el.id, { scale: Math.max(0.1, initScale * (d / initDist)) });
-                    }
-                  };
+                    const onMove = (mv: PointerEvent) => {
+                      mv.preventDefault();
+                      const now = Math.atan2(mv.clientY - cy, mv.clientX - cx);
+                      const delta = (now - startAngle) * (180 / Math.PI);
+                      updateElement(el.id, { rotation: Math.round(baseRotation + delta) });
+                    };
 
-                  const onUp = () => {
-                    setIsResizing(false);
-                    document.removeEventListener('pointermove', onMove);
-                    document.removeEventListener('pointerup', onUp);
-                  };
+                    const onUp = () => {
+                      setIsResizing(false);
+                      document.removeEventListener('pointermove', onMove);
+                      document.removeEventListener('pointerup', onUp);
+                    };
 
-                  document.addEventListener('pointermove', onMove);
-                  document.addEventListener('pointerup', onUp);
-                }}
-              >
-                <div className="w-4 h-4 bg-blue-500 border-2 border-white rounded-full" />
-              </div>
+                    document.addEventListener('pointermove', onMove);
+                    document.addEventListener('pointerup', onUp);
+                  }}
+                >
+                  <div className="w-4 h-4 bg-blue-600 border-2 border-white rounded-full shadow-md" />
+                </div>
+                <div
+                  className="absolute -right-5 -bottom-5 w-10 h-10 flex items-center justify-center cursor-nwse-resize z-[100]"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (!containerRef.current) return;
+                    setIsResizing(true);
+
+                    const rect = containerRef.current.getBoundingClientRect();
+                    const cx = rect.left + (el.x / 100) * rect.width;
+                    const cy = rect.top + (el.y / 100) * rect.height;
+                    const initDist = Math.hypot(e.clientX - cx, e.clientY - cy);
+                    const initScale = el.scale;
+
+                    const onMove = (mv: PointerEvent) => {
+                      mv.preventDefault();
+                      const d = Math.hypot(mv.clientX - cx, mv.clientY - cy);
+                      if (initDist > 0) {
+                        updateElement(el.id, { scale: Math.max(0.1, initScale * (d / initDist)) });
+                      }
+                    };
+
+                    const onUp = () => {
+                      setIsResizing(false);
+                      document.removeEventListener('pointermove', onMove);
+                      document.removeEventListener('pointerup', onUp);
+                    };
+
+                    document.addEventListener('pointermove', onMove);
+                    document.addEventListener('pointerup', onUp);
+                  }}
+                >
+                  <div className="w-4 h-4 bg-blue-500 border-2 border-white rounded-full" />
+                </div>
+              </>
             )}
           </div>
         ))}
@@ -987,27 +1026,9 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
               </div>
             )}
 
-            <div className="w-px h-5 bg-white/10" />
-
-            <div className="flex items-center gap-2">
-              <ZoomIn className="w-3.5 h-3.5 text-neutral-600" />
-              <input
-                type="range" min="0.05" max="3" step="0.01"
-                value={selected.scale}
-                onChange={(e) => updateElement(selected.id, { scale: parseFloat(e.target.value) })}
-                className="w-20 accent-pink-500 h-px bg-neutral-800 rounded appearance-none cursor-pointer"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <RotateCw className="w-3.5 h-3.5 text-neutral-600" />
-              <input
-                type="range" min="0" max="360"
-                value={selected.rotation}
-                onChange={(e) => updateElement(selected.id, { rotation: parseInt(e.target.value) })}
-                className="w-20 accent-pink-500 h-px bg-neutral-800 rounded appearance-none cursor-pointer"
-              />
-            </div>
+            {/* Scale + rotation are now drag handles directly on the
+                selected object (see the wrapper above) — matching
+                scrapbook's pinch-point handles instead of these sliders. */}
 
             {selected.type === 'text' && (
               <>
