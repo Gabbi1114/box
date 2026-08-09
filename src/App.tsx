@@ -153,18 +153,13 @@ export default function App() {
   const [shareLoadFailed, setShareLoadFailed] = useState(false);
 
   // View-only mode (set when loading from ?share= URL, or after clicking "Done Editing").
-  // Computed upfront (not just defaulted false) so the bare studio URL — no
-  // ?share= at all, which is what the main marketing site iframes in as a
-  // decorative preview with no real box/session behind it — never flashes
-  // as a live editable studio even for a frame. Demo and real-share ids
-  // match what their own load effects below set anyway, so there's no
-  // flicker for those paths either.
-  const [isViewOnly, setIsViewOnly]   = useState(() => {
-    const id = getShareId();
-    if (!id) return true;                 // bare studio — passive by default
-    if (isDemoShareId(id)) return false;  // interactive demo — starts editable
-    return true;                          // real share link — starts in view-only
-  });
+  // The bare studio URL — no ?share= at all — stays a live editable studio,
+  // same as book/magazine's bare studio: it's the "build a box from scratch,
+  // then share it" flow, not just a decorative frame. Only a REAL ?share=
+  // link starts in view-only (set by the load effect below); share-specific
+  // chrome (End Editing, storage) is separately gated on isShareLink further
+  // down so it never appears just from a lazily-created share id.
+  const [isViewOnly, setIsViewOnly]   = useState(false);
   // Server-enforced permanent lock (POST /api/share/:id/finalize) — true for
   // every device that opens the link, not just the one that clicked "Finish".
   const [editingLocked, setEditingLocked] = useState(false);
@@ -527,8 +522,11 @@ export default function App() {
               </span>
             )}
 
-            {/* Storage used/left for this box's uploaded photos & videos */}
-            {storageText && (
+            {/* Storage used/left — only for a real ?share= link, same as the
+                countdown above. A lazily-created share from the bare studio
+                (uploading a photo before ever clicking Share) shouldn't
+                surface share-specific chrome that link never asked for. */}
+            {isShareLink && storageText && (
               <span
                 className="px-2 sm:px-3 py-2 rounded-full text-[10px] sm:text-xs font-mono safe-blur border bg-white/10 border-white/10 text-neutral-300"
                 title="Storage remaining for photos and videos on this box"
@@ -537,8 +535,9 @@ export default function App() {
               </span>
             )}
 
-            {/* End Editing — permanent lock, only on shared links */}
-            {shareId && (
+            {/* End Editing — permanent lock, only on real shared links (not
+                a shareId lazily created while using the bare studio) */}
+            {isShareLink && shareId && (
               <motion.button
                 onClick={() => setShowFinishConfirm(true)}
                 whileTap={{ scale: 0.92 }}
