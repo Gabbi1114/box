@@ -324,7 +324,10 @@ function useSideTexture(side: BoxSide, innerColor: string) {
         img.src = el.content;
       }
     }
-  }, [side.elements, innerColor]);
+  // side.drawing is a sibling field, not part of side.elements — without it
+  // here, drawing/erasing the whole-side ink layer wouldn't rebuild the
+  // texture until some unrelated element edit happened to fire this effect.
+  }, [side.elements, innerColor, side.drawing]);
 
   // Animated textures: register with the shared RAF ticker (throttled to GIF_FPS)
   const hasAnimated = side.elements.some(el => el.type === 'image' && isAnimated(el));
