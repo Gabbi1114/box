@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Circle, Eraser, Highlighter, Paintbrush, Pen, Pencil, SprayCan, Trash2, Undo2, X } from 'lucide-react';
 import { useLang, type TKey } from '../lib/i18n';
 
@@ -146,16 +146,25 @@ export default function DrawingModal({
   background,
   canvasWidth,
   canvasHeight,
+  initialDrawingUrl,
   onCancel,
   onInsert,
+  onRemove,
 }: {
   background?: React.ReactNode;
   /** Overrides the drawing canvas' pixel size/aspect ratio — used to match
    *  a specific photo's box instead of the default whole-side square. */
   canvasWidth?: number;
   canvasHeight?: number;
+  /** An existing drawing to load onto the canvas before the user draws
+   *  anything new — editing ink already on the side/photo adds to it
+   *  instead of starting over. */
+  initialDrawingUrl?: string;
   onCancel: () => void;
   onInsert: (file: File) => void;
+  /** Deletes the existing drawing outright — only offered when there is
+   *  one (initialDrawingUrl is set). Bypasses the canvas entirely. */
+  onRemove?: () => void;
 }) {
   const { t } = useLang();
   const CANVAS_W = canvasWidth ?? DEFAULT_CANVAS_W;
@@ -165,6 +174,7 @@ export default function DrawingModal({
   const lastPointRef = useRef<Point | null>(null);
   const isDrawingRef = useRef(false);
   const [strokeCount, setStrokeCount] = useState(0);
+  const [hasInitial, setHasInitial] = useState(false);
 
   const [brush, setBrush] = useState<BrushType>('pen');
   const [color, setColor] = useState('#171717');
@@ -172,6 +182,21 @@ export default function DrawingModal({
   const [opacity, setOpacity] = useState(1);
 
   const getCtx = () => canvasRef.current?.getContext('2d') ?? null;
+
+  useEffect(() => {
+    if (!initialDrawingUrl) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const ctx = getCtx();
+      const canvas = canvasRef.current;
+      if (!ctx || !canvas) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      setHasInitial(true);
+    };
+    img.src = initialDrawingUrl;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDrawingUrl]);
 
   const pushHistory = () => {
     const ctx = getCtx();
@@ -225,6 +250,7 @@ export default function DrawingModal({
     if (!prev) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       setStrokeCount(0);
+      setHasInitial(false);
       return;
     }
     ctx.putImageData(prev, 0, 0);
@@ -235,14 +261,17 @@ export default function DrawingModal({
     const ctx = getCtx();
     const canvas = canvasRef.current;
     if (!ctx || !canvas) return;
-    if (strokeCount > 0) pushHistory();
+    if (strokeCount > 0 || hasInitial) pushHistory();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setStrokeCount(0);
+    setHasInitial(false);
   };
+
+  const hasContent = strokeCount > 0 || hasInitial;
 
   const insert = () => {
     const canvas = canvasRef.current;
-    if (!canvas || strokeCount === 0) return;
+    if (!canvas || !hasContent) return;
     canvas.toBlob((blob) => {
       if (!blob) return;
       onInsert(new File([blob], 'drawing.png', { type: 'image/png' }));
@@ -262,10 +291,20 @@ export default function DrawingModal({
         </button>
         <span className="ml-1 text-xs font-semibold text-white/60">{t('draw')}</span>
         <div className="ml-auto flex items-center gap-2">
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex items-center gap-1.5 rounded-full bg-red-950/60 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-900/60"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {t('removeDrawing')}
+            </button>
+          )}
           <button
             type="button"
             onClick={undo}
-            disabled={strokeCount === 0}
+            disabled={!hasContent}
             className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium hover:bg-white/20 disabled:opacity-40"
           >
             <Undo2 className="w-3.5 h-3.5" />
@@ -274,7 +313,7 @@ export default function DrawingModal({
           <button
             type="button"
             onClick={clear}
-            disabled={strokeCount === 0}
+            disabled={!hasContent}
             className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium hover:bg-white/20 disabled:opacity-40"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -283,7 +322,7 @@ export default function DrawingModal({
           <button
             type="button"
             onClick={insert}
-            disabled={strokeCount === 0}
+            disabled={!hasContent}
             className="inline-flex items-center gap-1.5 rounded-full bg-pink-600 px-3 py-1.5 text-xs font-medium hover:bg-pink-500 disabled:opacity-40"
           >
             <Check className="w-3.5 h-3.5" />

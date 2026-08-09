@@ -147,6 +147,24 @@ function useSideTexture(side: BoxSide, innerColor: string) {
               staticCtx.drawImage(src as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
             }
           }
+          // Freehand ink drawn on this specific photo — same transform, so
+          // it moves/rotates/scales with the photo automatically. Its own
+          // aspect ratio matches the photo's on-screen box by construction
+          // (captured from that box at draw time), so the same fit-to-dcs
+          // scaling lines it up without any extra bookkeeping.
+          if (el.drawingOverlay) {
+            const overlaySrc = media.current.get(el.drawingOverlay);
+            if (overlaySrc) {
+              const ow = (overlaySrc as HTMLImageElement).naturalWidth;
+              const oh = (overlaySrc as HTMLImageElement).naturalHeight;
+              if (ow && oh) {
+                const fitScale = Math.min(1, dcs / ow, dcs / oh);
+                const drawW = ow * fitScale * texScale;
+                const drawH = oh * fitScale * texScale;
+                staticCtx.drawImage(overlaySrc as CanvasImageSource, -drawW / 2, -drawH / 2, drawW, drawH);
+              }
+            }
+          }
         } else if (el.type === 'sticker') {
           const emojiMap: Record<string, string> = { heart: '❤️', star: '⭐', sparkle: '✨', face: '😊' };
           staticCtx.font = `${72 * texScale}px serif`;
@@ -155,6 +173,15 @@ function useSideTexture(side: BoxSide, innerColor: string) {
           staticCtx.fillText(emojiMap[el.content] ?? '❤️', 0, 0);
         }
         staticCtx.restore();
+      }
+
+      // Freehand ink drawn on the whole side — captured full-bleed at draw
+      // time, so it just covers the whole texture with no transform.
+      if (side.drawing) {
+        const drawingSrc = media.current.get(side.drawing);
+        if (drawingSrc) {
+          staticCtx.drawImage(drawingSrc as CanvasImageSource, 0, 0, RES, RES);
+        }
       }
     };
 
@@ -220,9 +247,37 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     const toLoad = side.elements.filter(
       el => el.type === 'image' && !media.current.has(el.content),
     );
-    if (toLoad.length === 0) return;
+    // Freehand ink layers (per-photo overlays + the whole-side drawing) —
+    // always static PNGs, loaded the same way as a static image but keyed
+    // by their own URL rather than an element's content.
+    const overlayKeys: string[] = [];
+    for (const el of side.elements) {
+      if (el.drawingOverlay && !media.current.has(el.drawingOverlay)) {
+        overlayKeys.push(el.drawingOverlay);
+      }
+    }
+    if (side.drawing && !media.current.has(side.drawing)) {
+      overlayKeys.push(side.drawing);
+    }
+    if (toLoad.length === 0 && overlayKeys.length === 0) return;
 
-    let pending = toLoad.length;
+    let pending = toLoad.length + overlayKeys.length;
+    for (const key of overlayKeys) {
+      const img = document.createElement('img') as HTMLImageElement;
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        media.current.set(key, img);
+        buildStaticLayer();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(staticCanvas, 0, 0);
+        texture.needsUpdate = true;
+        invalidate();
+        if (--pending === 0) drawFn.current();
+      };
+      img.onerror = () => { if (--pending === 0) drawFn.current(); };
+      img.src = key;
+    }
     for (const el of toLoad) {
       if (isVideoUrl(el)) {
         _activeVideoCount++;

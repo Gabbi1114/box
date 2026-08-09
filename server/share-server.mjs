@@ -326,11 +326,9 @@ async function convertImage(buf, mime, hd = false) {
   try {
     const img     = sharp(buf, { failOn: 'none' }).rotate();
     const meta    = await img.metadata();
-    // Matches book/magazine's compression settings (1920px, AVIF, effort 4) —
-    // was WebP at effort:0 for ~10× faster encoding on Render's free-tier CPU,
-    // which is still the tradeoff being made here: AVIF at effort 4 is
-    // noticeably slower per upload than the old settings, in exchange for
-    // smaller files at the same quality and consistency with the other apps.
+    // Back to WebP at effort:0 — AVIF at effort 4 was ~10x slower to encode
+    // on Render's free-tier CPU, and that was most of what made uploads feel
+    // slow. Not worth AVIF's smaller-file edge for that cost here.
     const maxSide = 1920;
     const resized = img.resize({
       width:  meta.width  > maxSide ? maxSide : undefined,
@@ -338,10 +336,10 @@ async function convertImage(buf, mime, hd = false) {
       fit: 'inside', withoutEnlargement: true,
       kernel: sharp.kernel.lanczos3,
     });
-    const avif = await resized.avif({ quality: hd ? 65 : 62, effort: 4 }).toBuffer();
-    return { body: avif, contentType: 'image/avif', ext: '.avif' };
+    const webp = await resized.webp({ quality: hd ? 82 : 78, effort: 0 }).toBuffer();
+    return { body: webp, contentType: 'image/webp', ext: '.webp' };
   } catch (e) {
-    console.warn('[share] AVIF conversion failed, storing original:', e.message);
+    console.warn('[share] WebP conversion failed, storing original:', e.message);
     return { body: buf, contentType: mime, ext: EXT_BY_MIME[mime] ?? '.bin' };
   }
 }

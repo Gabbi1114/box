@@ -388,6 +388,9 @@ export default function App() {
   const updateSideElements = (sideId: string, elements: GraphicElement[]) =>
     setSides(prev => prev.map(s => s.id === sideId ? { ...s, elements } : s));
 
+  const updateSideDrawing = (sideId: string, drawing: string | undefined) =>
+    setSides(prev => prev.map(s => s.id === sideId ? { ...s, drawing } : s));
+
   const handleBackToBox = () => { setActiveMode('BOX_EDIT'); setSelectedSideId(null); };
 
   const handleToggleOpen = () =>
@@ -849,6 +852,7 @@ export default function App() {
             <SideEditor
               side={selectedSide}
               onUpdate={(elements) => updateSideElements(selectedSide.id, elements)}
+              onUpdateDrawing={(drawing) => updateSideDrawing(selectedSide.id, drawing)}
               onClose={handleBackToBox}
               config={config}
               shareId={shareId ?? undefined}

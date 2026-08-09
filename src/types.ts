@@ -20,6 +20,10 @@ export interface GraphicElement {
    *  from — without this flag, a photo stored as a blob: URL would otherwise
    *  be indistinguishable from a video one and get rendered as one. */
   isVideo?: boolean;
+  /** Freehand ink drawn directly onto this element (a transparent PNG
+   *  covering its own on-screen box) — not a separate selectable element,
+   *  so it can't be dragged/resized/deleted apart from the photo it's on. */
+  drawingOverlay?: string;
 }
 
 export interface BoxSide {
@@ -27,6 +31,9 @@ export interface BoxSide {
   layer: number;
   index: number; // 0 to numSides-1
   elements: GraphicElement[];
+  /** Freehand ink drawn directly onto the whole side (a transparent PNG
+   *  covering the full side) — not a selectable/movable element. */
+  drawing?: string;
 }
 
 export type FloatingShape = 'heart' | 'cake' | 'rose';

@@ -1,6 +1,6 @@
 /**
  * Explosion Box Studio — Share System
- * Handles creating / loading / updating shares and uploading media for AVIF conversion.
+ * Handles creating / loading / updating shares and uploading media for WebP conversion.
  * The Vite dev server proxies /api → http://localhost:3001 so there are no CORS issues.
  */
 import { BoxConfig, BoxSide } from '../types';

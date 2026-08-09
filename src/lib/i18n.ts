@@ -54,6 +54,15 @@ const dict = {
   sprayBrush:       { en: 'Spray', mn: 'Спрэй' },
   circleBrush:      { en: 'Circles', mn: 'Тойрог' },
   opacity:          { en: 'Opacity', mn: 'Тодрол' },
+
+  cropPhoto:        { en: 'Crop photo', mn: 'Зураг тайрах' },
+  cropDragHint:     { en: 'Drag the box or its handles', mn: 'Хайрцгийг чирж хэмжээг тохируулна уу' },
+  cropFree:         { en: 'Free', mn: 'Чөлөөт' },
+  cropOriginal:     { en: 'Original', mn: 'Эх хэмжээ' },
+  cropSquare:       { en: 'Square', mn: 'Дөрвөлжин' },
+  applyCrop:        { en: 'Apply crop', mn: 'Тайрах' },
+  crop:             { en: 'Crop', mn: 'Тайрах' },
+  removeDrawing:    { en: 'Remove drawing', mn: 'Зургийг устгах' },
 } as const;
 
 export type TKey = keyof typeof dict;

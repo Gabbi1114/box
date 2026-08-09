@@ -1,17 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { BoxSide, GraphicElement, BoxConfig } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool } from 'lucide-react';
+import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool, Crop } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
 import { isDemoShareId } from '../lib/demoShare';
 import { useLang } from '../lib/i18n';
 import DrawingModal from './DrawingModal';
+import CropModal from './CropModal';
 
 interface SideEditorProps {
   side: BoxSide;
   config: BoxConfig;
   onUpdate: (elements: GraphicElement[]) => void;
+  /** Sets/clears the whole-side ink layer (side.drawing) — a fixed field on
+   *  the side itself, separate from onUpdate's elements array. */
+  onUpdateDrawing: (drawing: string | undefined) => void;
   onClose: () => void;
   shareId?: string;
   /** Creates a share on demand so photo uploads always go to the server/CDN */
@@ -40,7 +44,7 @@ interface GifResult {
   url: string; // mp4 preferred, gif fallback
 }
 
-export default function SideEditor({ side, config, onUpdate, onClose, shareId, getOrCreateShareId, onMediaBytesChange }: SideEditorProps) {
+export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, onClose, shareId, getOrCreateShareId, onMediaBytesChange }: SideEditorProps) {
   const { t } = useLang();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -53,6 +57,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   // time) so the result drops back at exactly the same size/spot.
   const [drawTargetId, setDrawTargetId] = useState<string | null>(null);
   const [drawTargetSizePx, setDrawTargetSizePx] = useState({ w: 200, h: 200 });
+  // Rectangular crop tool — replaces the same photo element's content in
+  // place (not a new element).
+  const [cropTargetId, setCropTargetId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Synchronous canvas-size read — avoids the async state-update race where
@@ -70,7 +77,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   const [showVideoInput, setShowVideoInput] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const videoFileRef = useRef<HTMLInputElement>(null);
-  // Photo file input (for local image uploads → AVIF via server)
+  // Photo file input (for local image uploads → WebP via server)
   const photoFileRef = useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -82,6 +89,35 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     setCanvasSize(containerRef.current.offsetWidth);
     return () => ro.disconnect();
   }, []);
+
+  // Always holds the latest side.elements — read by the background upload's
+  // swap-in-the-real-URL step so it never overwrites edits made while that
+  // upload was still in flight (a plain closure over `side` could be stale
+  // by the time an upload resolves).
+  const sideElementsRef = useRef(side.elements);
+  useEffect(() => {
+    sideElementsRef.current = side.elements;
+  }, [side.elements]);
+
+  const swapElementContent = (elementId: string, newContent: string) => {
+    onUpdate(
+      sideElementsRef.current.map(el =>
+        el.id === elementId ? { ...el, content: newContent } : el,
+      ),
+    );
+  };
+
+  const swapElementField = <K extends 'drawingOverlay'>(
+    elementId: string,
+    field: K,
+    value: GraphicElement[K],
+  ) => {
+    onUpdate(
+      sideElementsRef.current.map(el =>
+        el.id === elementId ? { ...el, [field]: value } : el,
+      ),
+    );
+  };
 
   const addElement = (type: GraphicElement['type']) => {
     const el: GraphicElement = {
@@ -238,11 +274,9 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
     placement?: { x?: number; y?: number; rotation?: number; scale?: number },
   ) => {
     const base = { x: 50, y: 50, scale: 0.8, rotation: 0, ...placement };
-    setUploading(true);
     setUploadError(null);
     if (isDemoShareId(shareId)) {
       // Demo sandbox — never touches the server, so skip the network round-trip entirely.
-      setUploading(false);
       const url = URL.createObjectURL(file);
       const el: GraphicElement = {
         id: uuidv4(), type: 'image', content: url,
@@ -253,6 +287,22 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       setSelectedId(el.id);
       return;
     }
+
+    // Show the photo immediately from a local blob URL — like Canva, not
+    // like waiting for the full upload round-trip. The real upload happens
+    // in the background and swaps the blob URL for the hosted one once
+    // it's ready, matching book's addImage().
+    const blobUrl = URL.createObjectURL(file);
+    const newId = uuidv4();
+    const el: GraphicElement = {
+      id: newId, type: 'image', content: blobUrl,
+      ...base, color: '#ffffff', fontSize: 24,
+      designCanvasSize: getCanvasSize(),
+    };
+    onUpdate([...side.elements, el]);
+    setSelectedId(newId);
+    setUploading(true);
+
     // Resolve or lazily create a share ID so the photo goes to the server/CDN
     const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
     if (effectiveShareId) {
@@ -260,31 +310,133 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
       const result   = await uploadMedia(effectiveShareId, toUpload);
       setUploading(false);
       if (result.ok) {
-        const el: GraphicElement = {
-          id: uuidv4(), type: 'image', content: result.url,
-          ...base, color: '#ffffff', fontSize: 24,
-          designCanvasSize: getCanvasSize(),
-          bytes: result.bytes,
-        };
-        onUpdate([...side.elements, el]);
-        setSelectedId(el.id);
+        swapElementContent(newId, result.url);
+        URL.revokeObjectURL(blobUrl);
         if (typeof result.mediaBytes === 'number') onMediaBytesChange?.(result.mediaBytes);
         return;
       }
       if ('limitReached' in result && result.limitReached) {
+        // Can never actually be saved — drop the optimistic placeholder
+        // rather than leave a photo that looks added but isn't.
+        onUpdate(sideElementsRef.current.filter(e => e.id !== newId));
         setUploadError('Storage limit reached for this box — remove a photo or video to add more.');
         return;
       }
+      setUploadError('Could not upload this photo — it will only be visible on this device until the page is shared again.');
+      return;
     }
     setUploading(false);
-    // Last-resort fallback: local blob URL (won't survive a share reload)
-    const url = URL.createObjectURL(file);
-    const el: GraphicElement = {
-      id: uuidv4(), type: 'image', content: url,
-      ...base, color: '#ffffff', fontSize: 24,
-    };
-    onUpdate([...side.elements, el]);
-    setSelectedId(el.id);
+    // No share id could be resolved at all — leave the local blob in place.
+  };
+
+  // Crop replaces an existing photo element's own content in place (not a
+  // new element) — same instant-local-preview-then-background-upload
+  // pattern as a fresh photo. No width/height bookkeeping needed here (a
+  // box image's box comes from its own natural size + the scale multiplier,
+  // so a differently-aspect-ratio crop just renders correctly on its own).
+  const applyCropToElement = async (elementId: string, croppedFile: File) => {
+    const target = sideElementsRef.current.find(e => e.id === elementId);
+    if (!target) return;
+    const blobUrl = URL.createObjectURL(croppedFile);
+    swapElementContent(elementId, blobUrl);
+    if (isDemoShareId(shareId)) return; // already showing the crop locally; nothing to persist
+
+    setUploading(true);
+    const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
+    if (effectiveShareId) {
+      const toUpload = await resizeForUpload(croppedFile);
+      const result   = await uploadMedia(effectiveShareId, toUpload);
+      setUploading(false);
+      if (result.ok) {
+        swapElementContent(elementId, result.url);
+        URL.revokeObjectURL(blobUrl);
+        if (typeof result.mediaBytes === 'number') onMediaBytesChange?.(result.mediaBytes);
+        return;
+      }
+      setUploadError('Could not upload the cropped photo — it will only be visible on this device until you retry.');
+      return;
+    }
+    setUploading(false);
+  };
+
+  // Reclaims storage for a previously-uploaded drawing that's about to be
+  // replaced or removed — mirrors removeElement's own cleanup so swapping/
+  // clearing ink doesn't silently leak storage the same way an orphaned
+  // photo would.
+  const reclaimDrawingStorage = (oldUrl: string | undefined) => {
+    if (oldUrl && shareId && isServerHostedUrl(oldUrl)) {
+      deleteMedia(shareId, oldUrl, 0).then(res => {
+        if (res.ok && typeof res.mediaBytes === 'number') onMediaBytesChange?.(res.mediaBytes);
+      });
+    }
+  };
+
+  // Freehand ink on the whole side — a fixed field on the side itself
+  // (side.drawing via onUpdateDrawing), not a new movable/resizable
+  // element like a photo.
+  const applySideDrawing = async (file: File) => {
+    const previousUrl = side.drawing;
+    const blobUrl = URL.createObjectURL(file);
+    onUpdateDrawing(blobUrl);
+    if (isDemoShareId(shareId)) return;
+
+    setUploading(true);
+    const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
+    if (effectiveShareId) {
+      const toUpload = await resizeForUpload(file);
+      const result   = await uploadMedia(effectiveShareId, toUpload);
+      setUploading(false);
+      if (result.ok) {
+        onUpdateDrawing(result.url);
+        URL.revokeObjectURL(blobUrl);
+        if (typeof result.mediaBytes === 'number') onMediaBytesChange?.(result.mediaBytes);
+        reclaimDrawingStorage(previousUrl);
+        return;
+      }
+      setUploadError('Could not upload the drawing — it will only be visible on this device until you retry.');
+      return;
+    }
+    setUploading(false);
+  };
+
+  const removeSideDrawing = () => {
+    reclaimDrawingStorage(side.drawing);
+    onUpdateDrawing(undefined);
+  };
+
+  // Freehand ink on one specific photo — a fixed field on that element
+  // (element.drawingOverlay), moving/resizing/rotating with it automatically
+  // instead of being its own separately-selectable sticker.
+  const applyElementDrawingOverlay = async (elementId: string, file: File) => {
+    const previousUrl = sideElementsRef.current.find(e => e.id === elementId)?.drawingOverlay;
+    const blobUrl = URL.createObjectURL(file);
+    swapElementField(elementId, 'drawingOverlay', blobUrl);
+    if (isDemoShareId(shareId)) return;
+
+    setUploading(true);
+    const effectiveShareId = shareId ?? (getOrCreateShareId ? await getOrCreateShareId() : null);
+    if (effectiveShareId) {
+      const toUpload = await resizeForUpload(file);
+      const result   = await uploadMedia(effectiveShareId, toUpload);
+      setUploading(false);
+      if (result.ok) {
+        swapElementField(elementId, 'drawingOverlay', result.url);
+        URL.revokeObjectURL(blobUrl);
+        if (typeof result.mediaBytes === 'number') onMediaBytesChange?.(result.mediaBytes);
+        reclaimDrawingStorage(previousUrl);
+        return;
+      }
+      setUploadError('Could not upload the drawing — it will only be visible on this device until you retry.');
+      return;
+    }
+    setUploading(false);
+  };
+
+  const removeElementDrawingOverlay = (elementId: string) => {
+    reclaimDrawingStorage(
+      sideElementsRef.current.find(e => e.id === elementId)?.drawingOverlay,
+    );
+    swapElementField(elementId, 'drawingOverlay', undefined);
   };
 
   // blob: URLs (local fallback) carry no extension to sniff, so the explicit
@@ -310,7 +462,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
   // tool's background so strokes land in context instead of on a blank
   // square — same container/positioning as the real canvas above, minus
   // any interactivity.
-  const renderStaticSidePreview = () => (
+  const renderStaticSidePreview = (hideDrawing = false) => (
     <div
       className="relative h-full w-full overflow-hidden"
       style={{ backgroundColor: config.innerColor, clipPath: polygonClipPath }}
@@ -333,22 +485,32 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
               {el.content}
             </div>
           )}
-          {el.type === 'image' &&
-            (isVideoContent(el) ? (
-              <video
-                src={el.content}
-                muted
-                playsInline
-                className="block"
-                style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
-              />
-            ) : (
-              <img
-                src={el.content}
-                className="block"
-                style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
-              />
-            ))}
+          {el.type === 'image' && (
+            <div className="relative">
+              {isVideoContent(el) ? (
+                <video
+                  src={el.content}
+                  muted
+                  playsInline
+                  className="block"
+                  style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+                />
+              ) : (
+                <img
+                  src={el.content}
+                  className="block"
+                  style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+                />
+              )}
+              {el.drawingOverlay && (
+                <img
+                  src={el.drawingOverlay}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 h-full w-full"
+                />
+              )}
+            </div>
+          )}
           {el.type === 'sticker' && (
             <span style={{ fontSize: '72px', lineHeight: 1, display: 'block' }}>
               {STICKER_EMOJI[el.content] ?? '❤️'}
@@ -356,6 +518,13 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
           )}
         </div>
       ))}
+      {side.drawing && !hideDrawing && (
+        <img
+          src={side.drawing}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full"
+        />
+      )}
     </div>
   );
 
@@ -668,7 +837,7 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
               </div>
             )}
             {el.type === 'image' && (
-              <div className={`transition-all ${selectedId === el.id ? 'ring-2 ring-blue-500' : ''}`}>
+              <div className={`relative transition-all ${selectedId === el.id ? 'ring-2 ring-blue-500' : ''}`}>
                 {isVideoContent(el) ? (
                   <video
                     src={el.content}
@@ -686,6 +855,14 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
                     draggable={false}
                     className="block"
                     style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+                  />
+                )}
+                {el.drawingOverlay && (
+                  <img
+                    src={el.drawingOverlay}
+                    draggable={false}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 h-full w-full"
                   />
                 )}
               </div>
@@ -737,6 +914,16 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
             )}
           </div>
         ))}
+        {/* Freehand ink drawn on the whole side — a fixed overlay, not a
+            selectable/movable element. */}
+        {side.drawing && (
+          <img
+            src={side.drawing}
+            alt=""
+            draggable={false}
+            className="pointer-events-none absolute inset-0 h-full w-full"
+          />
+        )}
       </div>
 
       {/* Floating context bar */}
@@ -845,6 +1032,13 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
                 >
                   <PenTool className="w-4 h-4" />
                 </button>
+                <button
+                  onClick={() => setCropTargetId(selected.id)}
+                  className="text-neutral-400 hover:text-pink-400 transition-colors p-1"
+                  title={t('crop')}
+                >
+                  <Crop className="w-4 h-4" />
+                </button>
               </>
             )}
 
@@ -864,29 +1058,29 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
         const targetEl = side.elements.find(e => e.id === drawTargetId);
         if (!targetEl) return null;
         // Canvas keeps the photo's own on-screen aspect ratio (captured at
-        // click time), scaled up 4x for a crisp brush. Since the drawn PNG
-        // then goes through the exact same maxWidth/maxHeight-capped,
-        // scale-multiplied sizing as any image, reusing the original
-        // rotation/scale reproduces the same final on-screen size.
+        // click time), scaled up 4x for a crisp brush. Saved as that
+        // element's own drawingOverlay field — not a new element — so it
+        // moves/rotates/scales with the photo automatically.
         const elW = Math.max(40, Math.round(drawTargetSizePx.w));
         const elH = Math.max(40, Math.round(drawTargetSizePx.h));
         return (
           <DrawingModal
             canvasWidth={elW * 4}
             canvasHeight={elH * 4}
+            initialDrawingUrl={targetEl.drawingOverlay}
             background={
               <img src={targetEl.content} className="h-full w-full object-cover" />
             }
             onCancel={() => { setShowDrawing(false); setDrawTargetId(null); }}
+            onRemove={targetEl.drawingOverlay ? () => {
+              removeElementDrawingOverlay(targetEl.id);
+              setShowDrawing(false);
+              setDrawTargetId(null);
+            } : undefined}
             onInsert={(file) => {
               setShowDrawing(false);
               setDrawTargetId(null);
-              void handleImageFile(file, {
-                x: targetEl.x,
-                y: targetEl.y,
-                rotation: targetEl.rotation,
-                scale: targetEl.scale,
-              });
+              void applyElementDrawingOverlay(targetEl.id, file);
             }}
           />
         );
@@ -894,14 +1088,34 @@ export default function SideEditor({ side, config, onUpdate, onClose, shareId, g
 
       {showDrawing && !drawTargetId && (
         <DrawingModal
-          background={renderStaticSidePreview()}
+          initialDrawingUrl={side.drawing}
+          background={renderStaticSidePreview(true)}
           onCancel={() => setShowDrawing(false)}
+          onRemove={side.drawing ? () => {
+            removeSideDrawing();
+            setShowDrawing(false);
+          } : undefined}
           onInsert={(file) => {
             setShowDrawing(false);
-            void handleImageFile(file);
+            void applySideDrawing(file);
           }}
         />
       )}
+
+      {cropTargetId && (() => {
+        const targetEl = side.elements.find(e => e.id === cropTargetId);
+        if (!targetEl) return null;
+        return (
+          <CropModal
+            imageSrc={targetEl.content}
+            onCancel={() => setCropTargetId(null)}
+            onApply={(file) => {
+              void applyCropToElement(cropTargetId, file);
+              setCropTargetId(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
