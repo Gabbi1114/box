@@ -918,13 +918,17 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
           </div>
         ))}
         {/* Freehand ink drawn on the whole side — a fixed overlay, not a
-            selectable/movable element. */}
+            selectable/movable element. z-[60]: every element wrapper above
+            gets z-10 (z-50 when selected), so without an explicit z-index
+            here (which defaults to auto) this would render BELOW any photo
+            despite coming later in the DOM — matching the 3D preview
+            (which always draws this layer on top) requires outranking both. */}
         {side.drawing && (
           <img
             src={side.drawing}
             alt=""
             draggable={false}
-            className="pointer-events-none absolute inset-0 h-full w-full"
+            className="pointer-events-none absolute inset-0 h-full w-full z-[60]"
           />
         )}
       </div>
