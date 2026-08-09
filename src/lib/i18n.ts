@@ -63,6 +63,9 @@ const dict = {
   applyCrop:        { en: 'Apply crop', mn: 'Тайрах' },
   crop:             { en: 'Crop', mn: 'Тайрах' },
   removeDrawing:    { en: 'Remove drawing', mn: 'Зургийг устгах' },
+
+  sendBehindDrawing:      { en: 'Send behind drawing', mn: 'Зургийн ард нуух' },
+  bringInFrontOfDrawing:  { en: 'Bring in front of drawing', mn: 'Зургийн урд гаргах' },
 } as const;
 
 export type TKey = keyof typeof dict;

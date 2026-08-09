@@ -24,6 +24,11 @@ export interface GraphicElement {
    *  covering its own on-screen box) — not a separate selectable element,
    *  so it can't be dragged/resized/deleted apart from the photo it's on. */
   drawingOverlay?: string;
+  /** True to render this element BELOW the side's whole-side drawing
+   *  (side.drawing), i.e. the ink covers it. Default (false/absent) is
+   *  above the drawing — photos aren't obscured by page-wide ink unless
+   *  the user explicitly asks for that. */
+  belowDrawing?: boolean;
 }
 
 export interface BoxSide {

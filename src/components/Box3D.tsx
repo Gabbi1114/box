@@ -116,8 +116,8 @@ function useSideTexture(side: BoxSide, innerColor: string) {
       staticCtx.fillStyle = innerColor;
       staticCtx.fillRect(0, 0, RES, RES);
 
-      for (const el of side.elements) {
-        if (el.type === 'image' && isAnimated(el)) continue; // animated: handled in drawFn
+      const paintElement = (el: GraphicElement) => {
+        if (el.type === 'image' && isAnimated(el)) return; // animated: handled in drawFn
 
         const dcs = el.designCanvasSize ?? windowCanvasSize;
         const texScale = RES / dcs;
@@ -173,6 +173,14 @@ function useSideTexture(side: BoxSide, innerColor: string) {
           staticCtx.fillText(emojiMap[el.content] ?? '❤️', 0, 0);
         }
         staticCtx.restore();
+      };
+
+      // Two passes around the whole-side drawing so each element's
+      // belowDrawing flag decides which side of the ink it paints on —
+      // default (false/absent) is in front, so page-wide ink doesn't
+      // obscure photos unless the user explicitly sends one behind it.
+      for (const el of side.elements) {
+        if (el.belowDrawing) paintElement(el);
       }
 
       // Freehand ink drawn on the whole side — captured full-bleed at draw
@@ -182,6 +190,10 @@ function useSideTexture(side: BoxSide, innerColor: string) {
         if (drawingSrc) {
           staticCtx.drawImage(drawingSrc as CanvasImageSource, 0, 0, RES, RES);
         }
+      }
+
+      for (const el of side.elements) {
+        if (!el.belowDrawing) paintElement(el);
       }
     };
 

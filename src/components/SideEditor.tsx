@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BoxSide, GraphicElement, BoxConfig } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool, Crop } from 'lucide-react';
+import { Type, Image as ImageIcon, Sparkles, Trash2, RotateCw, ZoomIn, Check, Film, Search, X, Video, Upload, Link, Loader, PenTool, Crop, SendToBack, BringToFront } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadMedia, deleteMedia, isServerHostedUrl } from '../lib/shareSystem';
 import { isDemoShareId } from '../lib/demoShare';
@@ -465,62 +465,67 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
   // tool's background so strokes land in context instead of on a blank
   // square — same container/positioning as the real canvas above, minus
   // any interactivity.
+  const renderStaticSideElement = (el: GraphicElement) => (
+    <div
+      key={el.id}
+      className="absolute"
+      style={{
+        left: `${el.x}%`,
+        top: `${el.y}%`,
+        transform: `translate(-50%, -50%) rotate(${el.rotation}deg) scale(${el.scale})`,
+      }}
+    >
+      {el.type === 'text' && (
+        <div
+          style={{ color: el.color, fontSize: `${el.fontSize}px`, fontWeight: 'bold', padding: '4px 8px' }}
+          className="whitespace-nowrap"
+        >
+          {el.content}
+        </div>
+      )}
+      {el.type === 'image' && (
+        <div className="relative">
+          {isVideoContent(el) ? (
+            <video
+              src={el.content}
+              muted
+              playsInline
+              className="block"
+              style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+            />
+          ) : (
+            <img
+              src={el.content}
+              className="block"
+              style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
+            />
+          )}
+          {el.drawingOverlay && (
+            <img
+              src={el.drawingOverlay}
+              alt=""
+              className="pointer-events-none absolute inset-0 h-full w-full"
+            />
+          )}
+        </div>
+      )}
+      {el.type === 'sticker' && (
+        <span style={{ fontSize: '72px', lineHeight: 1, display: 'block' }}>
+          {STICKER_EMOJI[el.content] ?? '❤️'}
+        </span>
+      )}
+    </div>
+  );
+
   const renderStaticSidePreview = (hideDrawing = false) => (
     <div
       className="relative h-full w-full overflow-hidden"
       style={{ backgroundColor: config.innerColor, clipPath: polygonClipPath }}
     >
-      {side.elements.map((el) => (
-        <div
-          key={el.id}
-          className="absolute"
-          style={{
-            left: `${el.x}%`,
-            top: `${el.y}%`,
-            transform: `translate(-50%, -50%) rotate(${el.rotation}deg) scale(${el.scale})`,
-          }}
-        >
-          {el.type === 'text' && (
-            <div
-              style={{ color: el.color, fontSize: `${el.fontSize}px`, fontWeight: 'bold', padding: '4px 8px' }}
-              className="whitespace-nowrap"
-            >
-              {el.content}
-            </div>
-          )}
-          {el.type === 'image' && (
-            <div className="relative">
-              {isVideoContent(el) ? (
-                <video
-                  src={el.content}
-                  muted
-                  playsInline
-                  className="block"
-                  style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
-                />
-              ) : (
-                <img
-                  src={el.content}
-                  className="block"
-                  style={{ width: 'auto', height: 'auto', maxWidth: canvasSize || 500, maxHeight: canvasSize || 500 }}
-                />
-              )}
-              {el.drawingOverlay && (
-                <img
-                  src={el.drawingOverlay}
-                  alt=""
-                  className="pointer-events-none absolute inset-0 h-full w-full"
-                />
-              )}
-            </div>
-          )}
-          {el.type === 'sticker' && (
-            <span style={{ fontSize: '72px', lineHeight: 1, display: 'block' }}>
-              {STICKER_EMOJI[el.content] ?? '❤️'}
-            </span>
-          )}
-        </div>
-      ))}
+      {/* Same behind/in-front split as the live canvas and the 3D texture,
+          so this reference (what the drawing tool shows as its background)
+          matches what actually gets rendered. */}
+      {side.elements.filter((el) => el.belowDrawing).map(renderStaticSideElement)}
       {side.drawing && !hideDrawing && (
         <img
           src={side.drawing}
@@ -528,6 +533,7 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
           className="pointer-events-none absolute inset-0 h-full w-full"
         />
       )}
+      {side.elements.filter((el) => !el.belowDrawing).map(renderStaticSideElement)}
     </div>
   );
 
@@ -781,7 +787,13 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
           <div
             key={el.id}
             data-el-id={el.id}
-            className={`absolute cursor-move select-none touch-none ${selectedId === el.id ? 'z-50' : 'z-10'}`}
+            // Elements sit above the whole-side drawing (z-40) by default —
+            // ink shouldn't obscure photos unless the user explicitly sends
+            // one behind it (z-20, below the drawing's z-30). Selected always
+            // wins regardless of tier, so drag/resize stays reachable.
+            className={`absolute cursor-move select-none touch-none ${
+              selectedId === el.id ? 'z-50' : el.belowDrawing ? 'z-20' : 'z-40'
+            }`}
             style={{
               left: `${el.x}%`,
               top: `${el.y}%`,
@@ -918,17 +930,18 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
           </div>
         ))}
         {/* Freehand ink drawn on the whole side — a fixed overlay, not a
-            selectable/movable element. z-[60]: every element wrapper above
-            gets z-10 (z-50 when selected), so without an explicit z-index
-            here (which defaults to auto) this would render BELOW any photo
-            despite coming later in the DOM — matching the 3D preview
-            (which always draws this layer on top) requires outranking both. */}
+            selectable/movable element. z-30 sits between an element's
+            behind-drawing tier (z-20) and its default in-front tier (z-40),
+            so each element's belowDrawing flag decides which side of the
+            ink it renders on — without an explicit z-index here (which
+            defaults to auto) this would lose to EVERY element regardless
+            of DOM order, matching neither tier. */}
         {side.drawing && (
           <img
             src={side.drawing}
             alt=""
             draggable={false}
-            className="pointer-events-none absolute inset-0 h-full w-full z-[60]"
+            className="pointer-events-none absolute inset-0 h-full w-full z-30"
           />
         )}
       </div>
@@ -1046,6 +1059,19 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
                 >
                   <Crop className="w-4 h-4" />
                 </button>
+                {/* Only meaningful once there's a whole-side drawing to sit
+                    in front of or behind — no-op otherwise. */}
+                {side.drawing && (
+                  <button
+                    onClick={() => updateElement(selected.id, { belowDrawing: !selected.belowDrawing })}
+                    className="text-neutral-400 hover:text-pink-400 transition-colors p-1"
+                    title={selected.belowDrawing ? t('bringInFrontOfDrawing') : t('sendBehindDrawing')}
+                  >
+                    {selected.belowDrawing
+                      ? <BringToFront className="w-4 h-4" />
+                      : <SendToBack className="w-4 h-4" />}
+                  </button>
+                )}
               </>
             )}
 
