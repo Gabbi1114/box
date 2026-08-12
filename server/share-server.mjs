@@ -211,26 +211,24 @@ async function selfHealShare(id) {
 }
 
 // ---------------------------------------------------------------------------
-// ffmpeg (video → WebM) — optional, graceful fallback if not installed
+// ffmpeg (video → MP4) — optional, graceful fallback if not installed
 // ---------------------------------------------------------------------------
 let ffmpegBin = null;
+let ffprobeBin = null;
 try {
   ffmpegBin = (await import('ffmpeg-static')).default;
+  ffprobeBin = (await import('ffprobe-static')).default.path;
   console.log('[share] ✓ ffmpeg loaded — video transcoding enabled');
 } catch {
-  console.warn('[share] ✗ ffmpeg-static not found — videos stored as-is');
+  console.warn('[share] ✗ ffmpeg-static/ffprobe-static not found — videos stored as-is');
 }
 
-const PASSTHROUGH_VIDEO = new Set(['video/mp4', 'video/webm', 'video/ogg']);
+// Matches scrapbook's cap — keeps the two apps' upload limits (and their
+// user-facing messaging) consistent.
+const MAX_VIDEO_SECONDS = 60;
 
 async function transcodeVideo(buf, mime) {
   const srcExt = EXT_BY_MIME[mime] ?? '.mp4';
-
-  // MP4 and WebM are already browser-ready — skip transcoding for instant upload
-  if (PASSTHROUGH_VIDEO.has(mime)) {
-    console.log(`[share] video    pass-through  ${(buf.length / 1e6).toFixed(1)}MB (${mime})`);
-    return { body: buf, contentType: mime, ext: srcExt };
-  }
 
   if (!ffmpegBin) {
     return { body: buf, contentType: mime, ext: srcExt };
@@ -242,15 +240,49 @@ async function transcodeVideo(buf, mime) {
   try {
     fs.writeFileSync(tmpIn, buf);
 
-    // H.264 MP4: universally supported (iOS, Android, desktop)
-    // ultrafast preset makes encoding ~10× faster than VP9 on Render free tier
+    if (ffprobeBin) {
+      const probe = await execFileAsync(ffprobeBin, [
+        '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1', tmpIn,
+      ]);
+      const durationSec = Number.parseFloat((probe.stdout || '').trim());
+      if (Number.isFinite(durationSec) && durationSec > MAX_VIDEO_SECONDS) {
+        const err = new Error(`Video exceeds ${MAX_VIDEO_SECONDS}s limit.`);
+        err.code = 'VIDEO_TOO_LONG';
+        throw err;
+      }
+    }
+
+    // H.264 MP4: universally supported (iOS, Android, desktop). Always
+    // transcodes now — previously mp4/webm/ogg (i.e. almost every real
+    // upload) skipped this entirely and stored the raw bytes untouched,
+    // which is where box's video storage was actually going. Capped to
+    // 480px wide since these are small decorative face-in-a-box loops, not
+    // full-page content — matches scrapbook's scale/crf/maxrate approach,
+    // just tighter given box's smaller on-screen footprint. Audio still
+    // stripped (box faces are silent looping clips) — the biggest single
+    // size win, since it drops the audio track entirely rather than just
+    // compressing it.
     await execFileAsync(ffmpegBin, [
       '-i', tmpIn,
+      '-t', String(MAX_VIDEO_SECONDS),
+      // Single-quoted min(...) — not a backslash-escaped comma — because
+      // the backslash form (which scrapbook's equivalent filter also uses)
+      // got silently stripped by Node's argv handling when tested on
+      // Windows, breaking ffmpeg's filter-graph parser ("No option name
+      // near 'fast_bilinear'"). Single quotes are ffmpeg's own filter-value
+      // quoting and aren't touched by any OS/child_process layer — verified
+      // scale-down-only (never upscales) on both landscape and portrait
+      // sources before shipping this.
+      '-vf', "scale='min(480,iw)':-2:flags=fast_bilinear",
       '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-crf', '28',                 // good quality, small file
+      '-preset', 'veryfast',
+      '-crf', '32',
+      '-maxrate', '500k',
+      '-bufsize', '1000k',
       '-an',                        // strip audio (box faces are silent looping clips)
       '-movflags', '+faststart',    // move MP4 metadata to front for instant streaming
+      '-pix_fmt', 'yuv420p',
       '-y', tmpOut,
     ], { timeout: 90_000 });
 
@@ -258,6 +290,7 @@ async function transcodeVideo(buf, mime) {
     console.log(`[share] video    transcode OK  ${(buf.length / 1e6).toFixed(1)}MB → ${(body.length / 1e6).toFixed(1)}MB`);
     return { body, contentType: 'video/mp4', ext: '.mp4' };
   } catch (e) {
+    if (e.code === 'VIDEO_TOO_LONG') throw e;
     console.warn('[share] Video transcode failed, storing original:', e.message?.slice(0, 120));
     return { body: buf, contentType: mime, ext: srcExt };
   } finally {
@@ -492,11 +525,20 @@ app.post(
     const isVideo = mime.startsWith('video/');
     const isGif   = mime === 'image/gif';
 
-    const { body, contentType, ext } = isVideo
-      ? await transcodeVideo(req.body, mime)
-      : isGif
-      ? await transcodeGif(req.body)
-      : await convertImage(req.body, mime, hd);
+    let converted;
+    try {
+      converted = isVideo
+        ? await transcodeVideo(req.body, mime)
+        : isGif
+        ? await transcodeGif(req.body)
+        : await convertImage(req.body, mime, hd);
+    } catch (e) {
+      if (e?.code === 'VIDEO_TOO_LONG') {
+        return res.status(413).json({ error: `One video can be maximum ${MAX_VIDEO_SECONDS} seconds.` });
+      }
+      throw e;
+    }
+    const { body, contentType, ext } = converted;
 
     const slug = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
     const url  = await storeMedia(safeId(req.params.id), slug, body, contentType);

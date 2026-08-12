@@ -205,10 +205,41 @@ export default function SideEditor({ side, config, onUpdate, onUpdateDrawing, on
     setVideoUrl('');
   };
 
+  // Rejects an over-length clip before spending a network round-trip and
+  // server-side ffmpeg work on it — matches scrapbook's 60s cap and its
+  // client-side pre-check, since the server now enforces the same limit
+  // (previously box had no duration limit at all, client or server).
+  const probeVideoDurationSec = (file: File) =>
+    new Promise<number>((resolve, reject) => {
+      const video = document.createElement('video');
+      const url = URL.createObjectURL(file);
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        const d = video.duration;
+        URL.revokeObjectURL(url);
+        resolve(Number.isFinite(d) ? d : 0);
+      };
+      video.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Could not read video length.'));
+      };
+      video.src = url;
+    });
+
   const handleVideoFile = async (file: File) => {
     setShowVideoInput(false);
-    setUploading(true);
     setUploadError(null);
+    try {
+      const sec = await probeVideoDurationSec(file);
+      if (sec > 60) {
+        setUploadError('One video can be at most 1 minute.');
+        return;
+      }
+    } catch {
+      setUploadError('Could not check the video length.');
+      return;
+    }
+    setUploading(true);
     if (isDemoShareId(shareId)) {
       // Demo sandbox — never touches the server, so skip the network round-trip entirely.
       setUploading(false);
