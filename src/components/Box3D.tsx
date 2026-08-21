@@ -106,6 +106,38 @@ function useSideTexture(side: BoxSide, innerColor: string) {
     // updates aren't silently skipped by the currentTime guard in drawFn.
     lastVideoTime.current.clear();
 
+    // Prune media no longer referenced by this side. Every side stays mounted
+    // for the life of the editing session (see the render tree below), so
+    // without this, replacing or deleting a photo just orphans its decoded
+    // image/video in media.current forever — and for video/GIF, leaves the
+    // hidden <video>/<img> element in the DOM still decoding frames forever.
+    // That accumulation across a session is the actual mobile OOM crash.
+    const currentKeys = new Set<string>();
+    for (const el of side.elements) {
+      if (el.type !== 'image') continue;
+      currentKeys.add(el.content);
+      if (el.drawingOverlay) currentKeys.add(el.drawingOverlay);
+    }
+    if (side.drawing) currentKeys.add(side.drawing);
+
+    for (const [key, el] of media.current) {
+      if (currentKeys.has(key)) continue;
+      media.current.delete(key);
+      if (el instanceof HTMLVideoElement) {
+        el.pause();
+        el.src = '';   // forces iOS to release the hardware decoder immediately
+        el.load();
+        el.parentNode?.removeChild(el);
+        videoElems.current = videoElems.current.filter(v => v !== el);
+        _activeVideoCount = Math.max(0, _activeVideoCount - 1);
+      } else if (gifImgs.current.includes(el)) {
+        el.parentNode?.removeChild(el);
+        gifImgs.current = gifImgs.current.filter(img => img !== el);
+      }
+      // Plain static <img> elements were never appended to the DOM — dropping
+      // the only reference here is enough for GC to reclaim the decoded bitmap.
+    }
+
     const windowCanvasSize = Math.min(window.innerHeight * 0.55, window.innerWidth * 0.55);
 
     // ── Build static cache: background + text + stickers + static images ──────
